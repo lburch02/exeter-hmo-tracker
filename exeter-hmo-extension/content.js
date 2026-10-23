@@ -4,12 +4,12 @@
   const COMMUNAL_CAPTION_RE =
     /\b(kitchen|bathroom|shower|garden|lounge|living|communal|exterior|hallway|patio|dining|wc|toilet|utility)\b/i;
 
-  // Normalizes abbreviated Exeter street names ("5 Victoria St" -> "Victoria Street", "Manston Road, Exeter" -> "Manston Road")
+  // Normalizes abbreviated street names ("5 Victoria St" -> "Victoria Street", "Manston Road, Exeter" -> "Manston Road")
   function normalizeStreetName(raw) {
-    if (!raw) return "Exeter Shared House";
+    if (!raw) return "Shared House";
     let s = raw
       .trim()
-      .replace(/,.*$/, "") // Strip ", Exeter" suffix
+      .replace(/,.*$/, "") // Strip ", City" suffix
       .replace(/^\d+[a-zA-Z]?\s+/, ""); // Strip leading house number like "5 Victoria St"
     s = s
       .replace(/\bSt\.?$/i, "Street")
@@ -129,8 +129,8 @@
       document.querySelector("[id*='AdvertHeader_display_name']");
     const detectedLandlord = landlordEl ? landlordEl.innerText.trim() : "";
 
-    // Find Exeter postcode outcode (default EX4 if not found)
-    const outcodeMatch = bodyText.match(/\b(EX[1-4])\b/i);
+    // Find UK postcode outcode (e.g. EX4, BS8, M14)
+    const outcodeMatch = bodyText.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\b/i);
     const outcode = outcodeMatch ? outcodeMatch[1].toUpperCase() : "EX4";
 
     // Extract Exeter street name from Studentpad H2 title first (e.g. "Manston Road, Exeter") or body text
@@ -255,7 +255,7 @@
   function formatPortalLabel(portal) {
     const names = {
       spareroom: "SpareRoom",
-      studentpad: "Exeter Studentpad",
+      studentpad: "Studentpad",
       openrent: "OpenRent",
       unihomes: "UniHomes",
       rightmove: "Rightmove",
@@ -539,13 +539,13 @@
         <div class="unmatched-banner">
           <div class="unmatched-top">
             <div>
-              <strong>🏠 Exeter HMO Room Tracker (${escapeHtml(portalLabel)}):</strong>
+              <strong>📡 RoomRadar (${escapeHtml(portalLabel)}):</strong>
               No past tenant reviews yet for <b>${escapeHtml(meta.streetHint)} (${escapeHtml(meta.outcode)})</b>
               ${meta.detectedLandlord ? `• Landlord/Agent: <b>${escapeHtml(meta.detectedLandlord)}</b>` : ""}
               • Advert <code>#${escapeHtml(adId)}</code>
             </div>
             <div style="display: flex; gap: 8px; align-items: center;">
-              <a class="btn-outline" href="https://exeter-hmo-tracker.onrender.com/" target="_blank" rel="noopener">Exeter Map Dashboard ↗</a>
+              <a class="btn-outline" href="https://exeter-hmo-tracker.onrender.com/" target="_blank" rel="noopener">RoomRadar Dashboard ↗</a>
               <button class="btn" id="submit-review-btn">Lived here? Add Room Review</button>
             </div>
           </div>
@@ -567,7 +567,7 @@
     if (apiData.match_method === "PERCEPTUAL_IMAGE_HASH") {
       matchTag = `Cross-Portal Photo Match (${64 - apiData.hamming_distance}/64 bits identical)`;
     } else if (apiData.match_method === "STREET_ADDRESS_MATCH") {
-      matchTag = `Matched via Exeter Street Profile (${apiData.street_hint})`;
+      matchTag = `Matched via Street Profile (${apiData.street_hint})`;
     }
 
     const rentAlert =
@@ -717,7 +717,7 @@
           <div class="pills">
             <span class="pill">Relisted ${escapeHtml(apiData.times_listed_18m)}x across portals</span>
             ${rentAlert}
-            <a class="btn-outline" href="https://exeter-hmo-tracker.onrender.com/" target="_blank" rel="noopener">Map Dashboard ↗</a>
+            <a class="btn-outline" href="https://exeter-hmo-tracker.onrender.com/" target="_blank" rel="noopener">RoomRadar Dashboard ↗</a>
             <button class="btn" id="submit-review-btn">+ Add Review</button>
           </div>
         </div>
@@ -879,11 +879,11 @@
     const anchor = findBestAnchor();
     if (!anchor) return;
 
-    let host = document.getElementById("exeter-hmo-shadow-host");
+    let host = document.getElementById("roomradar-shadow-host") || document.getElementById("exeter-hmo-shadow-host");
     let shadow;
     if (!host) {
       host = document.createElement("div");
-      host.id = "exeter-hmo-shadow-host";
+      host.id = "roomradar-shadow-host";
       host.style.cssText =
         "margin: 12px 0; width: 100%; box-sizing: border-box; clear: both; position: relative; z-index: 9999;";
       anchor.insertAdjacentElement("afterend", host);

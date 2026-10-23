@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Exeter HMO Room Tracker — Street & Agency Explorer</title>
+  <title>RoomRadar — Universal HMO Room & Rent Tracker</title>
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -357,8 +357,8 @@
   <header>
     <div class="brand">
       <div>
-        <h1>🏠 Exeter HMO Room Tracker</h1>
-        <p>Room-level perceptual image hashing, historical rent hike tracking & tenant reviews across EX1–EX4</p>
+        <h1>📡 RoomRadar</h1>
+        <p>Universal HMO Room Tracker — Perceptual image hashing, historical rent hike tracking & verified tenant reviews across UK shared housing</p>
       </div>
     </div>
     <div class="header-stats">
@@ -369,11 +369,11 @@
   </header>
 
   <div class="container">
-    <!-- Left Column: Interactive Exeter Map + Agency Leaderboard -->
+    <!-- Left Column: Interactive Map + Agency Leaderboard -->
     <div>
       <div class="panel">
         <div class="panel-header">
-          <h2>📍 Exeter HMO Room Map (Click pin to filter)</h2>
+          <h2>📍 HMO Room & Street Map (Click pin to filter)</h2>
           <button
             style="font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 4px 8px; cursor: pointer;"
             id="reset-map-filter"
@@ -416,10 +416,12 @@
           placeholder="Search street (Monks Rd, Pennsylvania Rd, Victoria St), agency, or room..."
         />
         <select id="outcode-filter">
-          <option value="ALL">All Exeter Outcodes</option>
+          <option value="ALL">All UK Outcodes</option>
           <option value="EX4">EX4 (St James / Pennsylvania / Mount Pleasant)</option>
           <option value="EX2">EX2 (Heavitree / St Leonard's)</option>
           <option value="EX1">EX1 (City Centre / Polsloe)</option>
+          <option value="BS8">BS8 (Bristol Clifton)</option>
+          <option value="M14">M14 (Manchester Fallowfield)</option>
         </select>
         <select id="sort-filter">
           <option value="rent_hike">Sort: Highest Rent Hike %</option>
@@ -437,19 +439,14 @@
   <div class="modal-backdrop" id="review-modal">
     <div class="modal">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h2 style="margin: 0; font-size: 18px;">✍️ Submit an Exeter HMO Room Review</h2>
+        <h2 style="margin: 0; font-size: 18px;">✍️ Submit an HMO Room Review</h2>
         <button id="close-modal-btn" style="border: none; background: none; font-size: 20px; cursor: pointer;">✕</button>
       </div>
       <form id="dashboard-review-form">
         <div class="form-grid-3">
           <label class="field">
-            <span>Exeter Outcode</span>
-            <select name="outcode">
-              <option value="EX4" selected>EX4</option>
-              <option value="EX1">EX1</option>
-              <option value="EX2">EX2</option>
-              <option value="EX3">EX3</option>
-            </select>
+            <span>Outcode</span>
+            <input type="text" name="outcode" placeholder="e.g. EX4, BS8, M14" value="EX4" required />
           </label>
           <label class="field">
             <span>Street Name</span>
@@ -491,7 +488,7 @@
           </label>
           <label class="field">
             <span>Landlord / Agency Name</span>
-            <input type="text" name="landlord_or_agency" placeholder="e.g. Star Lettings Exeter" required />
+            <input type="text" name="landlord_or_agency" placeholder="e.g. Star Lettings, Student Cribs, or Landlord" required />
           </label>
         </div>
 

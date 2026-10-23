@@ -1,10 +1,16 @@
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-import os
 from pathlib import Path
-import sqlite3
 from typing import Dict, List, Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+import db_adapter
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +18,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 # Import the hashing helpers, DB layer, and threshold from our prototype
-from exeter_hmo_matcher import (
+from roomradar_matcher import (
     HAMMING_DISTANCE_THRESHOLD,
     RoomFingerprintDB,
     compute_image_fingerprints,
@@ -22,7 +28,8 @@ from exeter_hmo_matcher import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "exeter_hmo_tracker.db"))
+_default_sqlite = str(BASE_DIR / "roomradar.db") if (BASE_DIR / "roomradar.db").exists() else str(BASE_DIR / "exeter_hmo_tracker.db")
+DB_PATH = os.environ.get("DB_PATH", _default_sqlite)
 DASHBOARD_HTML_PATH = BASE_DIR / "dashboard.html"
 
 
@@ -96,33 +103,41 @@ class RoomMatchResponse(BaseModel):
     reviews: List[ReviewItem] = Field(default_factory=list)
 
 
-# Known Exeter HMO street coordinates for the interactive map dashboard
-EXETER_STREET_COORDS: Dict[str, tuple] = {
-    "Monks Road": (50.7318, -3.5098, "Mount Pleasant / Polsloe"),
-    "Pennsylvania Road": (50.7352, -3.5248, "St James & Pennsylvania"),
-    "Victoria Street": (50.7336, -3.5212, "St James"),
-    "Springfield Road": (50.7341, -3.5190, "St James"),
-    "Old Tiverton Road": (50.7329, -3.5162, "St James / Sidwell"),
-    "Culverland Road": (50.7320, -3.5225, "St James"),
-    "Pinhoe Road": (50.7340, -3.5040, "Polsloe"),
-    "Manston Road": (50.7258, -3.5032, "Mount Pleasant / Heavitree"),
-    "Fore Street": (50.7195, -3.5015, "Heavitree"),
-    "Magdalen Road": (50.7202, -3.5195, "St Leonard's"),
-    "Howell Road": (50.7302, -3.5328, "St David's"),
-    "Blackall Road": (50.7314, -3.5290, "St David's / Pennsylvania"),
-    "Sidwell Street": (50.7278, -3.5220, "City Centre"),
+# Multi-city HMO street coordinates directory (starting with Exeter, scalable across UK student/rental markets)
+STREET_COORDINATES: Dict[str, tuple] = {
+    # Exeter
+    "Monks Road": (50.7318, -3.5098, "Exeter — Mount Pleasant / Polsloe"),
+    "Pennsylvania Road": (50.7352, -3.5248, "Exeter — St James & Pennsylvania"),
+    "Victoria Street": (50.7336, -3.5212, "Exeter — St James"),
+    "Springfield Road": (50.7341, -3.5190, "Exeter — St James"),
+    "Old Tiverton Road": (50.7329, -3.5162, "Exeter — St James / Sidwell"),
+    "Culverland Road": (50.7320, -3.5225, "Exeter — St James"),
+    "Pinhoe Road": (50.7340, -3.5040, "Exeter — Polsloe"),
+    "Manston Road": (50.7258, -3.5032, "Exeter — Mount Pleasant / Heavitree"),
+    "Fore Street": (50.7195, -3.5015, "Exeter — Heavitree"),
+    "Magdalen Road": (50.7202, -3.5195, "Exeter — St Leonard's"),
+    "Howell Road": (50.7302, -3.5328, "Exeter — St David's"),
+    "Blackall Road": (50.7314, -3.5290, "Exeter — St David's / Pennsylvania"),
+    "Sidwell Street": (50.7278, -3.5220, "Exeter — City Centre"),
+    # Scalable expansion anchors (Bristol, Manchester, Leeds, Birmingham)
+    "Whiteladies Road": (51.4642, -2.6083, "Bristol — Clifton"),
+    "Gloucester Road": (51.4789, -2.5894, "Bristol — Bishopston"),
+    "Wilmslow Road": (53.4475, -2.2190, "Manchester — Fallowfield"),
+    "Oxford Road": (53.4660, -2.2330, "Manchester — Student Corridor"),
+    "Otley Road": (53.8202, -1.5794, "Leeds — Headingley"),
+    "Cardigan Road": (53.8122, -1.5732, "Leeds — Hyde Park"),
+    "Bristol Road": (52.4430, -1.9360, "Birmingham — Selly Oak"),
 }
+# Backward-compatible alias
+EXETER_STREET_COORDS = STREET_COORDINATES
 
 
 # =====================================================================
 # 2. DATABASE CONNECTION & SEEDER (With Exeter Streets & Reviews)
 # =====================================================================
 
-def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.create_function("HAMMING_DIST", 2, hamming_distance_int64)
-    return conn
+def get_db_connection():
+    return db_adapter.DBConnection()
 
 
 def init_and_seed_reviews():
@@ -271,8 +286,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Exeter HMO Room Tracker API",
-    version="0.2.0",
+    title="RoomRadar — Universal HMO Room & Rent Tracking API",
+    description="Cross-portal perceptual image matching, historical rent tracking, and tenant reviews for shared houses.",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -388,8 +404,8 @@ async def get_dashboard_summary():
             overall_score = round(sum(avg_scores.values()) / 5.0, 1)
 
         street = rm["street_hint"] or "Monks Road"
-        lat, lng, zone = EXETER_STREET_COORDS.get(
-            street, (50.7318, -3.5150, "Exeter HMO Corridor")
+        lat, lng, zone = STREET_COORDINATES.get(
+            street, (50.7318, -3.5150, "Shared Housing Corridor")
         )
         # Offset slight jitter by room_id so multiple rooms on the same street are all clickable on the map
         lat_offset = lat + ((r_id % 5) - 2) * 0.00028
@@ -414,7 +430,7 @@ async def get_dashboard_summary():
                         "portal": s["portal"],
                         "ad_id": s["external_ad_id"],
                         "rent_pcm": s["rent_pcm"],
-                        "date": s["scraped_at"][:10],
+                        "date": s["scraped_at"].strftime("%Y-%m-%d") if hasattr(s["scraped_at"], "strftime") else str(s["scraped_at"])[:10],
                     }
                     for s in snapshots
                 ],
@@ -505,12 +521,12 @@ async def lookup_spareroom_listing(payload: ListingLookupRequest):
                 except Exception:
                     continue
 
-    # STAGE 3: Street Address Fallback (e.g., browsing a Studentpad property page on a tracked Exeter street)
+    # STAGE 3: Street Address Fallback (e.g., browsing a Studentpad property page on a known street)
     if (
         room_id is None
         and payload.street_hint
-        and payload.street_hint not in ("Unknown Street", "Exeter Shared House")
-        and clean_ad_id not in ("accommodation", "exeter-studentpad")
+        and payload.street_hint not in ("Unknown Street", "Exeter Shared House", "Shared House")
+        and clean_ad_id not in ("accommodation", "exeter-studentpad", "studentpad")
     ):
         street_row = conn.execute(
             """
@@ -614,7 +630,7 @@ async def submit_room_review(payload: ReviewSubmitRequest):
     conn = fingerprint_db.conn
     clean_ad_id = normalize_ad_id(payload.external_ad_id)
     outcode = payload.outcode.strip().upper() or "EX4"
-    street_hint = payload.street_hint.strip() or "Exeter Shared House"
+    street_hint = payload.street_hint.strip() or "Shared House"
     canonical_label = f"{payload.floor_level.strip()} {payload.room_aspect.strip()} Room"
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.isoformat()

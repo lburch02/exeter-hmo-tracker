@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "RoomRadar — HMO Room Review & Rent Tracker",
+  "version": "1.0.0",
+  "description": "Cross-portal HMO room recognition via perceptual image matching. Overlays tenant reviews, rent history, and landlord ratings directly on SpareRoom, Studentpad, OpenRent, UniHomes & Rightmove.",
+  "permissions": ["activeTab"],
+  "host_permissions": [
+    "*://*.spareroom.co.uk/*",
+    "*://*.exeterstudentpad.co.uk/*",
+    "*://*.exeterstudentpads.co.uk/*",
+    "*://*.studentpad.co.uk/*",
+    "*://*.openrent.co.uk/*",
+    "*://*.openrent.com/*",
+    "*://*.unihomes.co.uk/*",
+    "*://*.rightmove.co.uk/*",
+    "https://exeter-hmo-tracker.onrender.com/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.spareroom.co.uk/*",
+        "*://*.exeterstudentpad.co.uk/*",
+        "*://*.exeterstudentpads.co.uk/*",
+        "*://*.studentpad.co.uk/*",
+        "*://*.openrent.co.uk/*",
+        "*://*.openrent.com/*",
+        "*://*.unihomes.co.uk/*",
+        "*://*.rightmove.co.uk/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

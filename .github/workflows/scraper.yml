@@ -1,4 +1,4 @@
-name: Periodic Exeter HMO Scraper
+name: RoomRadar Periodic Scraper
 
 on:
   schedule:
@@ -26,6 +26,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Exeter HMO Scraper
+      - name: Run RoomRadar Scraper
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           python periodic_scraper.py

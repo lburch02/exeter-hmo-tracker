@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Exeter HMO Room-Level Review Overlay",
-  "version": "0.3.0",
-  "description": "Matches SpareRoom, Exeter Studentpad, Exeter Student Pads, OpenRent, UniHomes & Rightmove adverts to physical HMO rooms and displays past tenant reviews.",
+  "name": "RoomRadar — HMO Room Review & Rent Tracker",
+  "version": "1.0.0",
+  "description": "Cross-portal HMO room recognition via perceptual image matching. Overlays tenant reviews, rent history, and landlord ratings directly on SpareRoom, Studentpad, OpenRent, UniHomes & Rightmove.",
   "permissions": ["activeTab"],
   "host_permissions": [
     "*://*.spareroom.co.uk/*",

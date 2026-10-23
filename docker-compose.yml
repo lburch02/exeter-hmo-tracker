@@ -1,17 +1,17 @@
 services:
   api:
     build: .
-    container_name: exeter-hmo-tracker-api
+    container_name: roomradar-api
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       - PORT=8000
-      - DB_PATH=/app/data/exeter_hmo_tracker.db
+      - DB_PATH=/app/data/roomradar.db
     volumes:
       # Persist SQLite database across container restarts & rebuilds
-      - hmo_data:/app/data
+      - roomradar_data:/app/data
 
 volumes:
-  hmo_data:
+  roomradar_data:
     driver: local

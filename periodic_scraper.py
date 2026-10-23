@@ -1,10 +1,10 @@
 """
-Periodic Exeter Accommodation Scraper
-Runs on a scheduled basis (GitHub Actions Cron / Render Background Worker)
-Crawls active Exeter HMO listings across:
-1. SpareRoom Exeter (/flatshare/exeter and /flatshare/devon/exeter)
-2. Exeter Student Pads (exeterstudentpads.co.uk/properties/)
-3. Exeter Studentpad (exeterstudentpad.co.uk/Advert/)
+Periodic Accommodation Scraper (RoomRadar)
+Runs on a scheduled basis (GitHub Actions Cron / Render Background Worker).
+Crawls active HMO listings across UK student/rental markets:
+1. SpareRoom (configurable cities: Exeter, Bristol, Manchester, etc.)
+2. Regional Student Pads (e.g. exeterstudentpads.co.uk)
+3. Studentpad universities (e.g. exeterstudentpad.co.uk)
 
 Hashes room photos with pHash + dHash, filters communal areas,
 and records historical rent changes into the database.
@@ -20,7 +20,8 @@ from typing import List, Set, Tuple
 import httpx
 from bs4 import BeautifulSoup
 
-from exeter_hmo_matcher import (
+from roomradar_matcher import (
+    RoomRadarScraper,
     ExeterHMOScraper,
     RoomFingerprintDB,
     normalize_ad_id,
@@ -33,78 +34,98 @@ HEADERS = {
     )
 }
 
-DB_PATH = os.environ.get("DB_PATH", "exeter_hmo_tracker.db")
+_default_sqlite = "roomradar.db" if os.path.exists("roomradar.db") else "exeter_hmo_tracker.db"
+DB_PATH = os.environ.get("DB_PATH", _default_sqlite)
+
+# Target cities for SpareRoom crawlers (defaults to exeter, easily scalable by setting TARGET_CITIES="exeter,bristol,manchester")
+TARGET_CITIES = [c.strip().lower() for c in os.environ.get("TARGET_CITIES", "exeter").split(",") if c.strip()]
 
 
-async def discover_spareroom_exeter_listings(client: httpx.AsyncClient) -> List[Tuple[str, str]]:
-    """Discovers active SpareRoom listings in Exeter."""
+async def discover_spareroom_listings(client: httpx.AsyncClient, cities: List[str] = TARGET_CITIES) -> List[Tuple[str, str]]:
+    """Discovers active SpareRoom listings across configured target cities."""
     discovered: List[Tuple[str, str]] = []
     seen = set()
-    urls = [
-        "https://www.spareroom.co.uk/flatshare/exeter",
-        "https://www.spareroom.co.uk/flatshare/devon/exeter",
+
+    for city in cities:
+        urls = [
+            f"https://www.spareroom.co.uk/flatshare/{city}",
+        ]
+        if city == "exeter":
+            urls.append("https://www.spareroom.co.uk/flatshare/devon/exeter")
+
+        for search_url in urls:
+            try:
+                resp = await client.get(search_url, timeout=12.0)
+                if resp.status_code != 200:
+                    continue
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    # Match /flatshare/devon/exeter/18472412 or ?flatshare_id=18472412
+                    m = re.search(r"/flatshare/.*?/(\d{7,10})", href) or re.search(r"flatshare_id=(\d{7,10})", href)
+                    if m:
+                        ad_id = m.group(1)
+                        if ad_id not in seen:
+                            seen.add(ad_id)
+                            full_url = href if href.startswith("http") else f"https://www.spareroom.co.uk{href}"
+                            discovered.append((ad_id, full_url))
+            except Exception as e:
+                print(f"[WARN] Failed fetching SpareRoom {search_url}: {e}")
+
+    return discovered
+
+
+# Backward-compatible alias
+discover_spareroom_exeter_listings = discover_spareroom_listings
+
+
+async def discover_studentpads_listings(client: httpx.AsyncClient) -> List[Tuple[str, str]]:
+    """Discovers active regional Student Pads listings."""
+    discovered: List[Tuple[str, str]] = []
+    seen = set()
+    portals = [
+        "https://exeterstudentpads.co.uk/properties/",
     ]
-    for search_url in urls:
+    for portal_url in portals:
         try:
-            resp = await client.get(search_url, timeout=12.0)
-            if resp.status_code != 200:
-                continue
-            soup = BeautifulSoup(resp.text, "html.parser")
-            for a in soup.find_all("a", href=True):
-                href = a["href"]
-                # Match /flatshare/devon/exeter/18472412 or ?flatshare_id=18472412
-                m = re.search(r"/flatshare/.*?/(\d{7,10})", href) or re.search(r"flatshare_id=(\d{7,10})", href)
-                if m:
-                    ad_id = m.group(1)
-                    if ad_id not in seen:
-                        seen.add(ad_id)
-                        full_url = href if href.startswith("http") else f"https://www.spareroom.co.uk{href}"
-                        discovered.append((ad_id, full_url))
+            resp = await client.get(portal_url, timeout=12.0)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for a in soup.find_all("a", href=True):
+                    href = a["href"].strip()
+                    if ("studentpads.co.uk/" in href or href.startswith("/")) and not href.endswith(
+                        ("/properties/", "/contact/", ".co.uk/", "/faq/", "?page_id=372")
+                    ):
+                        slug = href.rstrip("/").split("/")[-1]
+                        if slug and slug not in seen and not slug.startswith("?") and slug not in ("faq", "contact", "properties"):
+                            seen.add(slug)
+                            discovered.append((slug, href))
         except Exception as e:
-            print(f"[WARN] Failed fetching SpareRoom {search_url}: {e}")
+            print(f"[WARN] Failed fetching Student Pads {portal_url}: {e}")
     return discovered
 
 
-async def discover_studentpads_exeter_listings(client: httpx.AsyncClient) -> List[Tuple[str, str]]:
-    """Discovers active Exeter Student Pads listings."""
-    discovered: List[Tuple[str, str]] = []
-    seen = set()
-    try:
-        resp = await client.get("https://exeterstudentpads.co.uk/properties/", timeout=12.0)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            for a in soup.find_all("a", href=True):
-                href = a["href"].strip()
-                if href.startswith("https://exeterstudentpads.co.uk/") and not href.endswith(
-                    ("/properties/", "/contact/", ".co.uk/", "/faq/", "?page_id=372")
-                ):
-                    slug = href.rstrip("/").split("/")[-1]
-                    # Filter out non-property pages
-                    if slug and slug not in seen and not slug.startswith("?") and slug not in ("faq", "contact", "properties"):
-                        seen.add(slug)
-                        discovered.append((slug, href))
-    except Exception as e:
-        print(f"[WARN] Failed fetching Exeter Student Pads: {e}")
-    return discovered
+# Backward-compatible alias
+discover_studentpads_exeter_listings = discover_studentpads_listings
 
 
 async def run_periodic_scrape(db_path: str = DB_PATH) -> int:
-    """Executes a full periodic scraping run across Exeter portals."""
-    print(f"[{datetime.now(timezone.utc).isoformat()}] Starting Exeter HMO periodic crawler...")
+    """Executes a full periodic scraping run across configured portals."""
+    print(f"[{datetime.now(timezone.utc).isoformat()}] Starting RoomRadar periodic crawler for cities: {TARGET_CITIES}...")
     db = RoomFingerprintDB(db_path)
     today_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    scraper = ExeterHMOScraper()
+    scraper = RoomRadarScraper()
 
     total_ingested = 0
 
     async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True) as client:
-        # 1. Discover SpareRoom Exeter ads
-        spareroom_listings = await discover_spareroom_exeter_listings(client)
-        print(f"[DISCOVERY] Found {len(spareroom_listings)} active SpareRoom Exeter adverts.")
+        # 1. Discover SpareRoom ads
+        spareroom_listings = await discover_spareroom_listings(client)
+        print(f"[DISCOVERY] Found {len(spareroom_listings)} active SpareRoom adverts.")
 
-        # 2. Discover Exeter Student Pads
-        studentpad_listings = await discover_studentpads_exeter_listings(client)
-        print(f"[DISCOVERY] Found {len(studentpad_listings)} active Exeter Student Pads adverts.")
+        # 2. Discover Student Pads
+        studentpad_listings = await discover_studentpads_listings(client)
+        print(f"[DISCOVERY] Found {len(studentpad_listings)} active Student Pads adverts.")
 
         all_listings = spareroom_listings + studentpad_listings
 

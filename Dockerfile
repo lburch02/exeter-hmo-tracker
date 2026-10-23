@@ -22,11 +22,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install --with-deps chromium
 
 # Copy application files
-COPY api.py exeter_hmo_matcher.py dashboard.html ./
+COPY api.py roomradar_matcher.py exeter_hmo_matcher.py db_adapter.py db_layer.py dashboard.html ./
 
 # Create data directory for persistent SQLite database
 RUN mkdir -p /app/data
-ENV DB_PATH=/app/data/exeter_hmo_tracker.db
+ENV DB_PATH=/app/data/roomradar.db
 
 # Expose port
 EXPOSE 8000
