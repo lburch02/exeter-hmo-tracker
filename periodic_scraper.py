@@ -39,38 +39,50 @@ DB_PATH = os.environ.get("DB_PATH", _default_sqlite)
 
 # Target cities for SpareRoom crawlers (defaults to exeter, easily scalable by setting TARGET_CITIES="exeter,bristol,manchester")
 TARGET_CITIES = [c.strip().lower() for c in os.environ.get("TARGET_CITIES", "exeter").split(",") if c.strip()]
+MAX_PAGES_PER_CITY = int(os.environ.get("MAX_PAGES_PER_CITY", "3"))
 
 
-async def discover_spareroom_listings(client: httpx.AsyncClient, cities: List[str] = TARGET_CITIES) -> List[Tuple[str, str]]:
-    """Discovers active SpareRoom listings across configured target cities."""
+async def discover_spareroom_listings(
+    client: httpx.AsyncClient, 
+    cities: List[str] = TARGET_CITIES, 
+    max_pages: int = MAX_PAGES_PER_CITY
+) -> List[Tuple[str, str]]:
+    """Discovers active SpareRoom listings across configured target cities with multi-page pagination."""
     discovered: List[Tuple[str, str]] = []
     seen = set()
 
     for city in cities:
-        urls = [
+        base_urls = [
             f"https://www.spareroom.co.uk/flatshare/{city}",
         ]
         if city == "exeter":
-            urls.append("https://www.spareroom.co.uk/flatshare/devon/exeter")
+            base_urls.append("https://www.spareroom.co.uk/flatshare/devon/exeter")
 
-        for search_url in urls:
-            try:
-                resp = await client.get(search_url, timeout=12.0)
-                if resp.status_code != 200:
-                    continue
-                soup = BeautifulSoup(resp.text, "html.parser")
-                for a in soup.find_all("a", href=True):
-                    href = a["href"]
-                    # Match /flatshare/devon/exeter/18472412 or ?flatshare_id=18472412
-                    m = re.search(r"/flatshare/.*?/(\d{7,10})", href) or re.search(r"flatshare_id=(\d{7,10})", href)
-                    if m:
-                        ad_id = m.group(1)
-                        if ad_id not in seen:
-                            seen.add(ad_id)
-                            full_url = href if href.startswith("http") else f"https://www.spareroom.co.uk{href}"
-                            discovered.append((ad_id, full_url))
-            except Exception as e:
-                print(f"[WARN] Failed fetching SpareRoom {search_url}: {e}")
+        for base_url in base_urls:
+            for page_idx in range(max_pages):
+                offset = page_idx * 10
+                search_url = f"{base_url}?offset={offset}" if offset > 0 else base_url
+                try:
+                    resp = await client.get(search_url, timeout=12.0)
+                    if resp.status_code != 200:
+                        continue
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    page_count = 0
+                    for a in soup.find_all("a", href=True):
+                        href = a["href"]
+                        # Match /flatshare/devon/exeter/18472412 or ?flatshare_id=18472412
+                        m = re.search(r"/flatshare/.*?/(\d{7,10})", href) or re.search(r"flatshare_id=(\d{7,10})", href)
+                        if m:
+                            ad_id = m.group(1)
+                            if ad_id not in seen:
+                                seen.add(ad_id)
+                                full_url = href if href.startswith("http") else f"https://www.spareroom.co.uk{href}"
+                                discovered.append((ad_id, full_url))
+                                page_count += 1
+                    if page_count == 0 and page_idx > 0:
+                        break  # Reached end of results for this query
+                except Exception as e:
+                    print(f"[WARN] Failed fetching SpareRoom {search_url}: {e}")
 
     return discovered
 

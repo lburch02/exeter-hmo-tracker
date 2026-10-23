@@ -350,14 +350,26 @@ class RoomFingerprintDB:
                     f"New Rent: £{listing.rent_pcm} pcm ({rent_diff:+d}/mo)"
                 )
             else:
+                try:
+                    import geocoder
+                    geo = geocoder.geocode_location(postcode=listing.outcode, street_hint=listing.street_hint)
+                    lat, lng = geo["latitude"], geo["longitude"]
+                    full_addr, pc = geo["full_address"], geo["postcode"]
+                except Exception:
+                    lat, lng, full_addr, pc = None, None, f"{listing.street_hint}, {listing.outcode}", listing.outcode
+
                 cur = self.conn.execute(
                     """
-                    INSERT INTO physical_rooms (outcode, street_hint, canonical_label, created_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO physical_rooms (outcode, street_hint, full_address, postcode, latitude, longitude, canonical_label, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         listing.outcode,
                         listing.street_hint,
+                        full_addr,
+                        pc,
+                        lat,
+                        lng,
                         f"{listing.outcode} - {listing.street_hint} ({listing.title[:35]})",
                         now_iso,
                     ),
