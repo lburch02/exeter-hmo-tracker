@@ -129,25 +129,35 @@
       document.querySelector("[id*='AdvertHeader_display_name']");
     const detectedLandlord = landlordEl ? landlordEl.innerText.trim() : "";
 
-    // Find UK postcode outcode (e.g. EX4, BS8, M14)
+    // Extract full UK postcode (e.g. EX4 6JA, EX4 7AX, BS8 1TH) or fallback to outcode
+    const fullPostcodeMatch = bodyText.match(/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i);
+    const fullPostcode = fullPostcodeMatch ? fullPostcodeMatch[1].toUpperCase().replace(/\s+/, " ") : null;
     const outcodeMatch = bodyText.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\b/i);
-    const outcode = outcodeMatch ? outcodeMatch[1].toUpperCase() : "EX4";
+    const outcode = fullPostcode ? fullPostcode.split(" ")[0] : (outcodeMatch ? outcodeMatch[1].toUpperCase() : "EX4");
 
-    // Extract Exeter street name from Studentpad H2 title first (e.g. "Manston Road, Exeter") or body text
+    // Extract exact street address (with house number if present)
     const streetRegex =
       /\b(?:\d+[a-zA-Z]?\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+(?:Road|Rd|Street|St|Avenue|Ave|Crescent|Cres|Lane|Ln|Hill|Terrace|Terr|Place|Pl|Close|Park|Way|Elmside))\b/;
     const h1StreetMatch = h1Text.match(streetRegex);
     const bodyStreetMatch = bodyText.match(streetRegex);
 
     let streetHint = "Monks Road";
+    let fullAddress = "";
     if (h1StreetMatch) {
       streetHint = normalizeStreetName(h1StreetMatch[1]);
+      fullAddress = h1StreetMatch[0];
     } else if (studentpadTitleEl && h1Text) {
       streetHint = normalizeStreetName(h1Text);
+      fullAddress = h1Text.replace(/,.*$/, "").trim();
     } else if (bodyStreetMatch) {
       streetHint = normalizeStreetName(bodyStreetMatch[1]);
+      fullAddress = bodyStreetMatch[0];
     } else if (/elmside/i.test(h1Text) || /elmside/i.test(bodyText)) {
       streetHint = "Elmside";
+      fullAddress = "Elmside";
+    }
+    if (fullPostcode && fullAddress && !fullAddress.includes(fullPostcode)) {
+      fullAddress = `${fullAddress}, ${fullPostcode}`;
     }
 
     // Parse rent:
@@ -230,7 +240,9 @@
 
     return {
       outcode,
+      fullPostcode,
       streetHint,
+      fullAddress,
       detectedLandlord,
       currentRentPcm,
       imageUrls: imageUrls.slice(0, 5),
@@ -908,7 +920,9 @@
           portal: portal,
           external_ad_id: adId,
           outcode: meta.outcode,
+          postcode: meta.fullPostcode || meta.outcode,
           street_hint: meta.streetHint,
+          full_address: meta.fullAddress,
           current_rent_pcm: meta.currentRentPcm,
           image_urls: meta.imageUrls,
         },

@@ -54,6 +54,10 @@ class DBConnection:
                         room_id SERIAL PRIMARY KEY,
                         outcode VARCHAR(10) NOT NULL,
                         street_hint VARCHAR(255),
+                        full_address VARCHAR(255),
+                        postcode VARCHAR(12),
+                        latitude DOUBLE PRECISION,
+                        longitude DOUBLE PRECISION,
                         canonical_label VARCHAR(255) NOT NULL,
                         created_at TIMESTAMPTZ NOT NULL
                     );
@@ -111,6 +115,10 @@ class DBConnection:
                         room_id INTEGER PRIMARY KEY AUTOINCREMENT,
                         outcode TEXT NOT NULL,
                         street_hint TEXT,
+                        full_address TEXT,
+                        postcode TEXT,
+                        latitude REAL,
+                        longitude REAL,
                         canonical_label TEXT NOT NULL,
                         created_at TEXT NOT NULL
                     );

@@ -445,12 +445,12 @@
       <form id="dashboard-review-form">
         <div class="form-grid-3">
           <label class="field">
-            <span>Outcode</span>
-            <input type="text" name="outcode" placeholder="e.g. EX4, BS8, M14" value="EX4" required />
+            <span>Full Postcode</span>
+            <input type="text" name="postcode" placeholder="e.g. EX4 6JA, BS8 1TH" value="EX4 7AX" required />
           </label>
           <label class="field">
-            <span>Street Name</span>
-            <input type="text" name="street_hint" placeholder="e.g. Monks Road" value="Monks Road" required />
+            <span>Full Address / Street</span>
+            <input type="text" name="full_address" placeholder="e.g. 12 Monks Road, Exeter" value="Monks Road, Exeter" required />
           </label>
           <label class="field">
             <span>Portal &amp; Advert ID</span>
@@ -615,13 +615,19 @@
           opacity: 1,
           fillOpacity: 0.92,
         });
+        const addressLine = rm.full_address || `${rm.street_hint}, ${rm.postcode || rm.outcode}`;
         marker.bindPopup(`
-          <strong>${escapeHtml(rm.canonical_label)}</strong><br/>
-          ${escapeHtml(rm.street_hint)} (${escapeHtml(rm.outcode)})<br/>
-          Score: <b>${rm.overall_score ?? "N/A"} / 5</b> • Latest Rent: <b>£${rm.latest_rent_pcm ?? "?"} pcm</b>
+          <div style="font-size: 13px; min-width: 180px;">
+            <strong style="color: #0f172a; font-size: 14px;">🏠 ${escapeHtml(rm.canonical_label)}</strong><br/>
+            <div style="color: #2563eb; font-weight: 600; margin: 3px 0;">📍 ${escapeHtml(addressLine)}</div>
+            <div style="color: #64748b; font-size: 11px;">Postcode: <b>${escapeHtml(rm.postcode || rm.outcode)}</b> • Room #${rm.room_id}</div>
+            <div style="margin-top: 6px; padding-top: 5px; border-top: 1px solid #e2e8f0; font-size: 12px;">
+              Score: <b>${rm.overall_score ?? "N/A"} / 5</b> • Rent: <b>£${rm.latest_rent_pcm ?? "?"} pcm</b>
+            </div>
+          </div>
         `);
         marker.on("click", () => {
-          document.getElementById("search-input").value = rm.street_hint;
+          document.getElementById("search-input").value = rm.full_address || rm.street_hint;
           applyFiltersAndRender();
         });
         marker.addTo(markerLayer);
@@ -695,9 +701,9 @@
             <div class="room-card" style="border-left-color: ${scoreColor(rm.overall_score)}">
               <div class="room-header">
                 <div>
-                  <div class="room-title">🏠 ${escapeHtml(rm.canonical_label)} — ${escapeHtml(rm.street_hint)} (${escapeHtml(rm.outcode)})</div>
+                  <div class="room-title">🏠 ${escapeHtml(rm.canonical_label)}</div>
                   <div class="room-sub">
-                    Zone: ${escapeHtml(rm.zone)} • Physical Room #${rm.room_id} • Latest SpareRoom Ad #${escapeHtml(rm.latest_ad_id || "N/A")}
+                    📍 <b>${escapeHtml(rm.full_address || rm.street_hint)}</b> • Postcode: <code>${escapeHtml(rm.postcode || rm.outcode)}</code> • Room #${rm.room_id}
                   </div>
                 </div>
                 <div class="pills">
