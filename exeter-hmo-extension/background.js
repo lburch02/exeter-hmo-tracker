@@ -1,4 +1,4 @@
-const API_BASE = "https://exeter-hmo-tracker.onrender.com/api/v1";
+const API_BASE = "https://roomradar.onrender.com/api/v1";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "LOOKUP_SPAREROOM_AD") {

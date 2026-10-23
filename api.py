@@ -295,7 +295,7 @@ app = FastAPI(
 # Allow requests from the Chrome Extension, SpareRoom, Exeter Studentpad, Exeter Student Pads, OpenRent, UniHomes, Rightmove, and localhost
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^(https?://([a-z0-9-]+\.)?(spareroom\.co\.uk|exeterstudentpad\.co\.uk|exeterstudentpads\.co\.uk|studentpad\.co\.uk|openrent\.co\.uk|openrent\.com|unihomes\.co\.uk|rightmove\.co\.uk)|chrome-extension://.*|http://localhost:\d+|http://127\.0\.0\.1:\d+)$",
+    allow_origin_regex=r"^(https?://([a-z0-9-]+\.)?(spareroom\.co\.uk|exeterstudentpad\.co\.uk|exeterstudentpads\.co\.uk|studentpad\.co\.uk|openrent\.co\.uk|openrent\.com|unihomes\.co\.uk|rightmove\.co\.uk|onrender\.com)|chrome-extension://.*|http://localhost:\d+|http://127\.0\.0\.1:\d+)$",
     allow_credentials=True,
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
