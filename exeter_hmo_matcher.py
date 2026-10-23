@@ -468,10 +468,19 @@ class ExeterHMOScraper:
             page_text,
             re.I,
         )
+        # Check Exeter Student Pads format: "Property Price Per Person | £220"
+        price_per_person_match = re.search(
+            r"(?:price\s*per\s*person|property\s*price)[^£\d]{1,30}£\s*([\d,]+)",
+            page_text,
+            re.I,
+        )
         if rent_match_pcm:
             rent_pcm = int(rent_match_pcm.group(1).replace(",", ""))
         elif rent_match_pw:
             rent_pw = int(rent_match_pw.group(1).replace(",", ""))
+            rent_pcm = round((rent_pw * 52) / 12)
+        elif price_per_person_match:
+            rent_pw = int(price_per_person_match.group(1).replace(",", ""))
             rent_pcm = round((rent_pw * 52) / 12)
 
         bills_included = bool(re.search(r"bills\s+included\s*:\s*yes|all\s+bills\s+included|bills\s+inclusive", page_text, re.I))
