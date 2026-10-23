@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exeter HMO Room Tracker — Street & Agency Explorer</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #ffffff;
+      --surface-muted: #f8fafc;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --green: #16a34a;
+      --amber: #d97706;
+      --red: #dc2626;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f5f9;
+      color: var(--text);
+    }
+    header {
+      background: var(--bg);
+      color: #fff;
+      padding: 16px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand h1 {
+      font-size: 20px;
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand p {
+      margin: 2px 0 0 0;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+    .header-stats {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .stat-pill {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #e2e8f0;
+      font-weight: 600;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:hover {
+      background: #1d4ed8;
+    }
+    .container {
+      max-width: 1380px;
+      margin: 20px auto;
+      padding: 0 20px;
+      display: grid;
+      grid-template-columns: 440px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 1024px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+      margin-bottom: 20px;
+    }
+    .panel-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-header h2 {
+      font-size: 15px;
+      margin: 0;
+      font-weight: 700;
+    }
+    #exeter-map {
+      height: 360px;
+      width: 100%;
+    }
+    .map-legend {
+      padding: 10px 16px;
+      background: var(--surface-muted);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 14px;
+      font-size: 12px;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+    .agency-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .agency-table th,
+    .agency-table td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .agency-table th {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: var(--surface-muted);
+    }
+    .agency-table tr:hover {
+      background: #f8fafc;
+      cursor: pointer;
+    }
+    .score-chip {
+      display: inline-block;
+      color: #fff;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .filters-bar {
+      padding: 14px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filters-bar input,
+    .filters-bar select {
+      padding: 8px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 13px;
+      background: #fff;
+    }
+    .filters-bar input {
+      flex: 1;
+      min-width: 200px;
+    }
+    .room-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--primary);
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+      transition: transform 0.1s ease;
+    }
+    .room-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .room-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin: 0 0 4px 0;
+    }
+    .room-sub {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .pills {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #334155;
+    }
+    .pill-warn {
+      background: #fef2f2;
+      color: var(--red);
+      border: 1px solid #fecaca;
+    }
+    .pill-agency {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin: 14px 0;
+    }
+    @media (max-width: 640px) {
+      .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .metric-box {
+      background: var(--surface-muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+    }
+    .metric-label {
+      font-size: 11px;
+      color: #475569;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .rent-timeline {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 12px;
+      background: #f8fafc;
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+    .review-item {
+      background: var(--surface-muted);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    .review-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 4px;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000;
+      padding: 16px;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 12px;
+      max-width: 680px;
+      width: 100%;
+      padding: 22px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      max-height: 92vh;
+      overflow-y: auto;
+    }
+    .form-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .form-grid-5 {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 10px;
+    }
+    .field input,
+    .field select,
+    .field textarea {
+      padding: 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div>
+        <h1>🏠 Exeter HMO Room Tracker</h1>
+        <p>Room-level perceptual image hashing, historical rent hike tracking & tenant reviews across EX1–EX4</p>
+      </div>
+    </div>
+    <div class="header-stats">
+      <span class="stat-pill" id="stat-rooms">Loading rooms...</span>
+      <span class="stat-pill" id="stat-reviews">Loading reviews...</span>
+      <button class="btn-primary" id="open-modal-btn">+ Submit Room Review</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Left Column: Interactive Exeter Map + Agency Leaderboard -->
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>📍 Exeter HMO Room Map (Click pin to filter)</h2>
+          <button
+            style="font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 4px 8px; cursor: pointer;"
+            id="reset-map-filter"
+          >
+            Show All Streets
+          </button>
+        </div>
+        <div id="exeter-map"></div>
+        <div class="map-legend">
+          <span><i class="dot" style="background: #16a34a;"></i>Good (4.0+ / 5)</span>
+          <span><i class="dot" style="background: #d97706;"></i>Mixed (2.8–3.9)</span>
+          <span><i class="dot" style="background: #dc2626;"></i>Warning (&lt; 2.8)</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>🏢 Landlord & Letting Agency Leaderboard</h2>
+        </div>
+        <table class="agency-table">
+          <thead>
+            <tr>
+              <th>Agency / Landlord</th>
+              <th>Comms</th>
+              <th>Deposit</th>
+              <th>Warmth</th>
+            </tr>
+          </thead>
+          <tbody id="agency-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Right Column: Filterable Room Cards -->
+    <div>
+      <div class="filters-bar">
+        <input
+          type="text"
+          id="search-input"
+          placeholder="Search street (Monks Rd, Pennsylvania Rd, Victoria St), agency, or room..."
+        />
+        <select id="outcode-filter">
+          <option value="ALL">All Exeter Outcodes</option>
+          <option value="EX4">EX4 (St James / Pennsylvania / Mount Pleasant)</option>
+          <option value="EX2">EX2 (Heavitree / St Leonard's)</option>
+          <option value="EX1">EX1 (City Centre / Polsloe)</option>
+        </select>
+        <select id="sort-filter">
+          <option value="rent_hike">Sort: Highest Rent Hike %</option>
+          <option value="worst_score">Sort: Lowest Rated First (Red Flags)</option>
+          <option value="best_score">Sort: Highest Rated First</option>
+          <option value="relisted">Sort: Most Frequently Relisted</option>
+        </select>
+      </div>
+
+      <div id="rooms-container"></div>
+    </div>
+  </div>
+
+  <!-- Add Review Modal -->
+  <div class="modal-backdrop" id="review-modal">
+    <div class="modal">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2 style="margin: 0; font-size: 18px;">✍️ Submit an Exeter HMO Room Review</h2>
+        <button id="close-modal-btn" style="border: none; background: none; font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+      <form id="dashboard-review-form">
+        <div class="form-grid-3">
+          <label class="field">
+            <span>Exeter Outcode</span>
+            <select name="outcode">
+              <option value="EX4" selected>EX4</option>
+              <option value="EX1">EX1</option>
+              <option value="EX2">EX2</option>
+              <option value="EX3">EX3</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Street Name</span>
+            <input type="text" name="street_hint" placeholder="e.g. Monks Road" value="Monks Road" required />
+          </label>
+          <label class="field">
+            <span>Portal &amp; Advert ID</span>
+            <div style="display: flex; gap: 6px;">
+              <select name="portal" style="width: 115px;">
+                <option value="studentpad">Studentpad</option>
+                <option value="spareroom" selected>SpareRoom</option>
+                <option value="openrent">OpenRent</option>
+                <option value="unihomes">UniHomes</option>
+                <option value="rightmove">Rightmove</option>
+              </select>
+              <input type="text" name="external_ad_id" placeholder="e.g. 884120" value="884120" style="flex: 1;" required />
+            </div>
+          </label>
+        </div>
+
+        <div class="form-grid-3">
+          <label class="field">
+            <span>Floor Level</span>
+            <select name="floor_level">
+              <option value="Ground Floor">Ground Floor</option>
+              <option value="First Floor" selected>First Floor</option>
+              <option value="Second Floor">Second Floor</option>
+              <option value="Attic / Loft">Attic / Loft</option>
+              <option value="Basement">Basement</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Window Aspect</span>
+            <select name="room_aspect">
+              <option value="Front (Street Side)">Front (Street Side)</option>
+              <option value="Rear (Garden View)" selected>Rear (Garden View)</option>
+              <option value="Side Return">Side Return</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Landlord / Agency Name</span>
+            <input type="text" name="landlord_or_agency" placeholder="e.g. Star Lettings Exeter" required />
+          </label>
+        </div>
+
+        <div class="form-grid-3">
+          <label class="field">
+            <span>Tenancy Period</span>
+            <input type="text" name="tenancy_period" value="Sep 2025 – Jul 2026" required />
+          </label>
+          <label class="field">
+            <span>Rent Paid (£ pcm)</span>
+            <input type="number" name="rent_paid_pcm" value="650" required />
+          </label>
+          <label class="field" style="justify-content: flex-end;">
+            <span style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" name="hold_for_deposit_30d" />
+              🔒 30-Day Deposit Embargo
+            </span>
+          </label>
+        </div>
+
+        <div class="form-grid-5">
+          <label class="field">
+            <span>Noise (1–5)</span>
+            <select name="noise_isolation">
+              <option value="1">1 - Awful</option>
+              <option value="2">2 - Noisy</option>
+              <option value="3" selected>3 - Okay</option>
+              <option value="4">4 - Quiet</option>
+              <option value="5">5 - Silent</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Warmth/Mould</span>
+            <select name="winter_warmth_damp">
+              <option value="1">1 - Black mould</option>
+              <option value="2">2 - Cold/Damp</option>
+              <option value="3" selected>3 - Average</option>
+              <option value="4">4 - Warm</option>
+              <option value="5">5 - Spotless</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Water Pressure</span>
+            <select name="water_pressure">
+              <option value="1">1 - Trickle</option>
+              <option value="2">2 - Weak</option>
+              <option value="3">3 - Okay</option>
+              <option value="4" selected>4 - Good</option>
+              <option value="5">5 - Great</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Deposit Return</span>
+            <select name="deposit_fairness">
+              <option value="1">1 - Unfair</option>
+              <option value="2">2 - Contested</option>
+              <option value="3">3 - Slow</option>
+              <option value="4" selected>4 - Fair</option>
+              <option value="5">5 - Full fast</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Agency Comms</span>
+            <select name="agency_communication">
+              <option value="1">1 - Ignored</option>
+              <option value="2">2 - Slow</option>
+              <option value="3">3 - Average</option>
+              <option value="4" selected>4 - Good</option>
+              <option value="5">5 - Excellent</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Your Room Review</span>
+          <textarea name="comment" rows="3" placeholder="Describe the specific room, warmth in winter, noise, and how the landlord/agency handled repairs..." required></textarea>
+        </label>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px;">
+          <button type="submit" class="btn-primary">Publish Review</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let allRooms = [];
+    let mapInstance = null;
+    let markerLayer = null;
+
+    function scoreColor(score) {
+      if (score === null || score === undefined) return "#64748b";
+      if (score >= 4.0) return "#16a34a";
+      if (score >= 2.8) return "#d97706";
+      return "#dc2626";
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function initMap() {
+      mapInstance = L.map("exeter-map").setView([50.7305, -3.5165], 14);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(mapInstance);
+      markerLayer = L.layerGroup().addTo(mapInstance);
+    }
+
+    function renderMapMarkers(rooms) {
+      markerLayer.clearLayers();
+      rooms.forEach((rm) => {
+        const color = scoreColor(rm.overall_score);
+        const marker = L.circleMarker([rm.lat, rm.lng], {
+          radius: 9,
+          fillColor: color,
+          color: "#ffffff",
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.92,
+        });
+        marker.bindPopup(`
+          <strong>${escapeHtml(rm.canonical_label)}</strong><br/>
+          ${escapeHtml(rm.street_hint)} (${escapeHtml(rm.outcode)})<br/>
+          Score: <b>${rm.overall_score ?? "N/A"} / 5</b> • Latest Rent: <b>£${rm.latest_rent_pcm ?? "?"} pcm</b>
+        `);
+        marker.on("click", () => {
+          document.getElementById("search-input").value = rm.street_hint;
+          applyFiltersAndRender();
+        });
+        marker.addTo(markerLayer);
+      });
+    }
+
+    function renderAgencyLeaderboard(agencies) {
+      const tbody = document.getElementById("agency-tbody");
+      tbody.innerHTML = agencies
+        .map(
+          (ag) => `
+          <tr onclick="filterByAgency('${escapeHtml(ag.name)}')">
+            <td>
+              <strong>${escapeHtml(ag.name)}</strong>
+              <div style="font-size: 11px; color: #64748b;">${ag.review_count} verified review${ag.review_count === 1 ? "" : "s"}</div>
+            </td>
+            <td><span class="score-chip" style="background:${scoreColor(ag.agency_comm_avg)}">${ag.agency_comm_avg} / 5</span></td>
+            <td><span class="score-chip" style="background:${scoreColor(ag.deposit_fairness_avg)}">${ag.deposit_fairness_avg} / 5</span></td>
+            <td><span class="score-chip" style="background:${scoreColor(ag.warmth_damp_avg)}">${ag.warmth_damp_avg} / 5</span></td>
+          </tr>
+        `
+        )
+        .join("");
+    }
+
+    window.filterByAgency = function (agencyName) {
+      document.getElementById("search-input").value = agencyName;
+      applyFiltersAndRender();
+    };
+
+    function renderRooms(rooms) {
+      const container = document.getElementById("rooms-container");
+      if (!rooms.length) {
+        container.innerHTML = `<div class="panel" style="padding: 24px; text-align: center; color: #64748b;">No rooms match your current filter.</div>`;
+        return;
+      }
+
+      container.innerHTML = rooms
+        .map((rm) => {
+          const s = rm.avg_scores || {
+            noise: 0,
+            warmth_damp: 0,
+            water_pressure: 0,
+            deposit_fairness: 0,
+            agency_comm: 0,
+          };
+          const timelineHtml = rm.rent_history
+            .map(
+              (h) =>
+                `<span><b>£${h.rent_pcm}</b> <small>(${h.date}, ${escapeHtml(h.portal || "spareroom")} #${escapeHtml(h.ad_id)})</small></span>`
+            )
+            .join(" → ");
+
+          const reviewsHtml = rm.reviews
+            .map(
+              (r) => `
+              <div class="review-item">
+                <div class="review-meta">
+                  <strong>Tenancy: ${escapeHtml(r.tenancy_period)}</strong>
+                  <span>Paid: £${r.rent_paid_pcm} pcm</span>
+                  ${r.landlord_or_agency ? `<span class="pill pill-agency">🏢 ${escapeHtml(r.landlord_or_agency)} (Comms: ${r.agency_communication}/5)</span>` : ""}
+                  <span style="color: #16a34a; font-weight: 600;">✓ Verified Tenancy</span>
+                </div>
+                <div>"${escapeHtml(r.comment)}"</div>
+              </div>
+            `
+            )
+            .join("");
+
+          return `
+            <div class="room-card" style="border-left-color: ${scoreColor(rm.overall_score)}">
+              <div class="room-header">
+                <div>
+                  <div class="room-title">🏠 ${escapeHtml(rm.canonical_label)} — ${escapeHtml(rm.street_hint)} (${escapeHtml(rm.outcode)})</div>
+                  <div class="room-sub">
+                    Zone: ${escapeHtml(rm.zone)} • Physical Room #${rm.room_id} • Latest SpareRoom Ad #${escapeHtml(rm.latest_ad_id || "N/A")}
+                  </div>
+                </div>
+                <div class="pills">
+                  <span class="pill pill-agency">🏢 ${escapeHtml(rm.primary_agency)}</span>
+                  <span class="pill">Relisted ${rm.times_listed}x</span>
+                  ${
+                    rm.rent_change_pct > 0
+                      ? `<span class="pill pill-warn">Rent +${rm.rent_change_pct}% (was £${rm.earliest_rent_pcm})</span>`
+                      : ""
+                  }
+                </div>
+              </div>
+
+              <div class="metrics-grid">
+                <div class="metric-box">
+                  <span class="metric-label">Noise Isolation</span>
+                  <span class="score-chip" style="background:${scoreColor(s.noise)}">${s.noise} / 5</span>
+                </div>
+                <div class="metric-box">
+                  <span class="metric-label">Warmth & Mould</span>
+                  <span class="score-chip" style="background:${scoreColor(s.warmth_damp)}">${s.warmth_damp} / 5</span>
+                </div>
+                <div class="metric-box">
+                  <span class="metric-label">Water Pressure</span>
+                  <span class="score-chip" style="background:${scoreColor(s.water_pressure)}">${s.water_pressure} / 5</span>
+                </div>
+                <div class="metric-box">
+                  <span class="metric-label">Deposit Return</span>
+                  <span class="score-chip" style="background:${scoreColor(s.deposit_fairness)}">${s.deposit_fairness} / 5</span>
+                </div>
+                <div class="metric-box">
+                  <span class="metric-label">Landlord / Agency</span>
+                  <span class="score-chip" style="background:${scoreColor(s.agency_comm)}">${s.agency_comm} / 5</span>
+                </div>
+              </div>
+
+              <div class="rent-timeline">
+                <strong>📈 Tracked Advert Rent History:</strong> ${timelineHtml}
+              </div>
+
+              <div>${reviewsHtml}</div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function applyFiltersAndRender() {
+      const q = document.getElementById("search-input").value.trim().toLowerCase();
+      const outcode = document.getElementById("outcode-filter").value;
+      const sortBy = document.getElementById("sort-filter").value;
+
+      let filtered = allRooms.filter((r) => {
+        if (outcode !== "ALL" && r.outcode !== outcode) return false;
+        if (!q) return true;
+        const hay = `${r.street_hint} ${r.canonical_label} ${r.primary_agency} ${r.outcode} ${r.zone}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+      filtered.sort((a, b) => {
+        if (sortBy === "rent_hike") return (b.rent_change_pct || 0) - (a.rent_change_pct || 0);
+        if (sortBy === "worst_score") return (a.overall_score ?? 99) - (b.overall_score ?? 99);
+        if (sortBy === "best_score") return (b.overall_score ?? 0) - (a.overall_score ?? 0);
+        if (sortBy === "relisted") return (b.times_listed || 0) - (a.times_listed || 0);
+        return 0;
+      });
+
+      renderRooms(filtered);
+    }
+
+    async function loadDashboard() {
+      const res = await fetch("/api/v1/dashboard/summary");
+      const data = await res.json();
+      allRooms = data.rooms;
+      document.getElementById("stat-rooms").textContent = `${data.total_rooms} Physical Rooms Tracked`;
+      document.getElementById("stat-reviews").textContent = `${data.total_reviews} Verified Reviews`;
+      renderMapMarkers(allRooms);
+      renderAgencyLeaderboard(data.agencies);
+      applyFiltersAndRender();
+    }
+
+    document.getElementById("search-input").addEventListener("input", applyFiltersAndRender);
+    document.getElementById("outcode-filter").addEventListener("change", applyFiltersAndRender);
+    document.getElementById("sort-filter").addEventListener("change", applyFiltersAndRender);
+    document.getElementById("reset-map-filter").addEventListener("click", () => {
+      document.getElementById("search-input").value = "";
+      document.getElementById("outcode-filter").value = "ALL";
+      applyFiltersAndRender();
+    });
+
+    const modal = document.getElementById("review-modal");
+    document.getElementById("open-modal-btn").addEventListener("click", () => {
+      modal.style.display = "flex";
+    });
+    document.getElementById("close-modal-btn").addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+
+    document.getElementById("dashboard-review-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = {
+        portal: fd.get("portal") || "spareroom",
+        external_ad_id: fd.get("external_ad_id"),
+        outcode: fd.get("outcode"),
+        street_hint: fd.get("street_hint"),
+        floor_level: fd.get("floor_level"),
+        room_aspect: fd.get("room_aspect"),
+        tenancy_period: fd.get("tenancy_period"),
+        rent_paid_pcm: parseInt(fd.get("rent_paid_pcm"), 10),
+        landlord_or_agency: fd.get("landlord_or_agency"),
+        noise_isolation: parseInt(fd.get("noise_isolation"), 10),
+        winter_warmth_damp: parseInt(fd.get("winter_warmth_damp"), 10),
+        water_pressure: parseInt(fd.get("water_pressure"), 10),
+        deposit_fairness: parseInt(fd.get("deposit_fairness"), 10),
+        agency_communication: parseInt(fd.get("agency_communication"), 10),
+        comment: fd.get("comment"),
+        hold_for_deposit_30d: fd.get("hold_for_deposit_30d") === "on",
+        image_urls: [],
+      };
+      await fetch("/api/v1/reviews/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      modal.style.display = "none";
+      e.target.reset();
+      await loadDashboard();
+    });
+
+    initMap();
+    loadDashboard();
+  </script>
+</body>
+</html>

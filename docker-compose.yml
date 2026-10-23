@@ -1,0 +1,17 @@
+services:
+  api:
+    build: .
+    container_name: exeter-hmo-tracker-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - DB_PATH=/app/data/exeter_hmo_tracker.db
+    volumes:
+      # Persist SQLite database across container restarts & rebuilds
+      - hmo_data:/app/data
+
+volumes:
+  hmo_data:
+    driver: local

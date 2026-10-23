@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Exeter HMO Room-Level Review Overlay",
+  "version": "0.3.0",
+  "description": "Matches SpareRoom, Exeter Studentpad, Exeter Student Pads, OpenRent, UniHomes & Rightmove adverts to physical HMO rooms and displays past tenant reviews.",
+  "permissions": ["activeTab"],
+  "host_permissions": [
+    "*://*.spareroom.co.uk/*",
+    "*://*.exeterstudentpad.co.uk/*",
+    "*://*.exeterstudentpads.co.uk/*",
+    "*://*.studentpad.co.uk/*",
+    "*://*.openrent.co.uk/*",
+    "*://*.openrent.com/*",
+    "*://*.unihomes.co.uk/*",
+    "*://*.rightmove.co.uk/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.spareroom.co.uk/*",
+        "*://*.exeterstudentpad.co.uk/*",
+        "*://*.exeterstudentpads.co.uk/*",
+        "*://*.studentpad.co.uk/*",
+        "*://*.openrent.co.uk/*",
+        "*://*.openrent.com/*",
+        "*://*.unihomes.co.uk/*",
+        "*://*.rightmove.co.uk/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
