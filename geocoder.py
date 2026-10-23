@@ -87,11 +87,73 @@ def extract_outcode(text: str) -> str:
     return m.group(1).upper() if m else "EX4"
 
 
+OUTCODE_CITY_MAP: Dict[str, str] = {
+    "EX": "Exeter",
+    "BS": "Bristol",
+    "M": "Manchester",
+    "B": "Birmingham",
+    "LS": "Leeds",
+    "S": "Sheffield",
+    "L": "Liverpool",
+    "NG": "Nottingham",
+    "CB": "Cambridge",
+    "OX": "Oxford",
+    "NE": "Newcastle",
+    "CF": "Cardiff",
+    "EH": "Edinburgh",
+    "G": "Glasgow",
+    "SO": "Southampton",
+    "BN": "Brighton",
+    "NR": "Norwich",
+    "CO": "Colchester",
+    "CV": "Coventry",
+}
+
+OUTCODE_SPECIAL_CITIES: Dict[str, str] = {
+    "EX7": "Dawlish",
+    "EX31": "Barnstaple",
+    "EX32": "Barnstaple",
+    "EX39": "Bideford",
+    "EX15": "Cullompton",
+    "EX5": "Clyst St Mary",
+    "BS32": "Bradley Stoke",
+    "BS34": "Filton",
+    "BS37": "Yate",
+    "BS15": "Hanham",
+    "BS16": "Fishponds",
+    "BS10": "Henbury",
+    "BS11": "Shirehampton",
+    "M30": "Eccles",
+    "M27": "Swinton",
+    "M25": "Prestwich",
+    "M21": "Chorlton",
+    "M20": "Didsbury",
+    "M14": "Fallowfield",
+    "M13": "Victoria Park",
+    "M6": "Salford",
+    "M5": "Salford",
+    "M3": "Salford / Manchester",
+    "M4": "Ancoats",
+    "M1": "Manchester City Centre",
+}
+
+
+def guess_city_from_outcode(outcode: str) -> str:
+    oc = (outcode or "").strip().upper()
+    if oc in OUTCODE_SPECIAL_CITIES:
+        return OUTCODE_SPECIAL_CITIES[oc]
+    prefix2 = re.sub(r"\d.*", "", oc)
+    if prefix2 in OUTCODE_CITY_MAP:
+        return OUTCODE_CITY_MAP[prefix2]
+    return "UK"
+
+
 def geocode_location(
     postcode: Optional[str] = None,
     street_hint: Optional[str] = None,
     full_address: Optional[str] = None,
-    city: str = "Exeter",
+    city: Optional[str] = None,
+    area_hint: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Synchronously geocodes a location down to exact coordinates, resolving:
@@ -100,14 +162,18 @@ def geocode_location(
     3. Outcode centroid via postcodes.io
     4. Built-in street registry fallback
     """
-    cache_key = f"{postcode or ''}|{street_hint or ''}|{full_address or ''}|{city}".strip().lower()
-    if cache_key in _GEOCODE_CACHE:
-        return _GEOCODE_CACHE[cache_key]
-
     clean_pc = normalize_postcode(postcode)
     clean_street = (street_hint or "").strip()
+    if clean_street.lower() in ("unknown street", "unknown", "shared house", "none"):
+        clean_street = ""
     clean_addr = (full_address or "").strip()
     outcode = extract_outcode(clean_pc or clean_street or "EX4")
+
+    detected_city = city or guess_city_from_outcode(outcode)
+
+    cache_key = f"{postcode or ''}|{clean_street}|{clean_addr}|{detected_city}|{area_hint or ''}".strip().lower()
+    if cache_key in _GEOCODE_CACHE:
+        return _GEOCODE_CACHE[cache_key]
 
     # 1. Try Full Postcode via postcodes.io
     if clean_pc and " " in clean_pc:
@@ -120,15 +186,25 @@ def geocode_location(
                 res = resp.json().get("result", {})
                 lat = float(res.get("latitude"))
                 lng = float(res.get("longitude"))
-                ward = res.get("admin_ward") or res.get("parish") or f"{outcode} Area"
-                addr = clean_addr or (f"{clean_street}, {city}, {clean_pc}" if clean_street else f"{city}, {clean_pc}")
+                ward = res.get("admin_ward") or res.get("parish") or area_hint or f"{outcode} Area"
+                district = res.get("admin_district") or detected_city
+                if isinstance(district, list):
+                    district = district[0] if district else detected_city
+
+                if clean_addr:
+                    addr = clean_addr
+                elif clean_street:
+                    addr = f"{clean_street}, {district}, {clean_pc}"
+                else:
+                    addr = f"{ward}, {district}, {clean_pc}"
+
                 data = {
                     "latitude": round(lat, 6),
                     "longitude": round(lng, 6),
                     "postcode": clean_pc,
                     "outcode": outcode,
                     "full_address": addr,
-                    "zone": f"{city} — {ward}",
+                    "zone": f"{district} — {ward}",
                     "method": "POSTCODE_EXACT",
                 }
                 _GEOCODE_CACHE[cache_key] = data
@@ -138,8 +214,8 @@ def geocode_location(
 
     # 2. Try Exact Address via OpenStreetMap Nominatim
     search_query = clean_addr
-    if not search_query and clean_street and clean_street.lower() != "unknown street":
-        search_query = f"{clean_street}, {city}, UK"
+    if not search_query and clean_street:
+        search_query = f"{clean_street}, {detected_city}, UK"
 
     if search_query:
         try:
@@ -156,14 +232,16 @@ def geocode_location(
                 display_name = hit.get("display_name", "")
                 found_pc = clean_pc or extract_full_postcode(display_name)
                 found_outcode = extract_outcode(found_pc or outcode)
-                resolved_addr = clean_addr or (f"{clean_street}, {city}, {found_pc}" if found_pc else f"{clean_street}, {city}")
+                resolved_addr = clean_addr or (
+                    f"{clean_street}, {detected_city}, {found_pc}" if found_pc else f"{clean_street}, {detected_city}"
+                )
                 data = {
                     "latitude": round(lat, 6),
                     "longitude": round(lng, 6),
                     "postcode": found_pc or found_outcode,
                     "outcode": found_outcode,
                     "full_address": resolved_addr,
-                    "zone": f"{city} — {clean_street or 'Street'}",
+                    "zone": f"{detected_city} — {clean_street or 'Area'}",
                     "method": "NOMINATIM_ADDRESS",
                 }
                 _GEOCODE_CACHE[cache_key] = data
@@ -171,22 +249,25 @@ def geocode_location(
         except Exception:
             pass
 
-    # 3. Try Known Street Fallback Registry
+    # 3. Try Known Street Fallback Registry (City-matched)
     street_key = clean_street.lower()
     if street_key in KNOWN_STREET_FALLBACKS:
         lat, lng, default_pc, zone = KNOWN_STREET_FALLBACKS[street_key]
-        resolved_pc = clean_pc or default_pc
-        data = {
-            "latitude": round(lat, 6),
-            "longitude": round(lng, 6),
-            "postcode": resolved_pc,
-            "outcode": extract_outcode(resolved_pc),
-            "full_address": clean_addr or f"{clean_street}, {city}, {resolved_pc}",
-            "zone": f"{city} — {zone}",
-            "method": "STREET_REGISTRY",
-        }
-        _GEOCODE_CACHE[cache_key] = data
-        return data
+        fallback_outcode = extract_outcode(default_pc)
+        # Only use registry if outcode prefix is compatible
+        if outcode[:2] == fallback_outcode[:2]:
+            resolved_pc = clean_pc or default_pc
+            data = {
+                "latitude": round(lat, 6),
+                "longitude": round(lng, 6),
+                "postcode": resolved_pc,
+                "outcode": extract_outcode(resolved_pc),
+                "full_address": clean_addr or f"{clean_street}, {detected_city}, {resolved_pc}",
+                "zone": f"{detected_city} — {zone}",
+                "method": "STREET_REGISTRY",
+            }
+            _GEOCODE_CACHE[cache_key] = data
+            return data
 
     # 4. Try Outcode Centroid via postcodes.io
     try:
@@ -195,13 +276,27 @@ def geocode_location(
             res = resp.json().get("result", {})
             lat = float(res.get("latitude"))
             lng = float(res.get("longitude"))
+            districts = res.get("admin_district", [])
+            district = districts[0] if districts else detected_city
+            if "Bristol" in district:
+                district = "Bristol"
+            wards = res.get("admin_ward", [])
+            ward = area_hint or (wards[0] if wards else f"{outcode} Area")
+
+            if clean_addr:
+                addr = clean_addr
+            elif clean_street:
+                addr = f"{clean_street}, {ward}, {district} {outcode}" if ward != clean_street else f"{clean_street}, {district} {outcode}"
+            else:
+                addr = f"{ward}, {district} {outcode}"
+
             data = {
                 "latitude": round(lat, 6),
                 "longitude": round(lng, 6),
                 "postcode": clean_pc or outcode,
                 "outcode": outcode,
-                "full_address": clean_addr or f"{clean_street or 'Shared House'}, {city}, {outcode}",
-                "zone": f"{city} — {outcode} Corridor",
+                "full_address": addr,
+                "zone": f"{district} — {ward}",
                 "method": "OUTCODE_CENTROID",
             }
             _GEOCODE_CACHE[cache_key] = data
@@ -210,13 +305,14 @@ def geocode_location(
         pass
 
     # 5. Final fallback
+    effective_name = clean_street or area_hint or f"{outcode} HMO Corridor"
     data = {
         "latitude": 50.731800,
         "longitude": -3.515000,
-        "postcode": clean_pc or "EX4",
-        "outcode": "EX4",
-        "full_address": clean_addr or f"{clean_street or 'Shared House'}, {city}",
-        "zone": f"{city} — HMO Corridor",
+        "postcode": clean_pc or outcode,
+        "outcode": outcode,
+        "full_address": clean_addr or f"{effective_name}, {detected_city} {outcode}",
+        "zone": f"{detected_city} — {effective_name}",
         "method": "DEFAULT_FALLBACK",
     }
     _GEOCODE_CACHE[cache_key] = data

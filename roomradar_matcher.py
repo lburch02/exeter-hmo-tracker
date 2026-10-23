@@ -642,10 +642,12 @@ class RoomRadarScraper:
         h1 = soup.find("h1")
         title = h1.get_text(strip=True) if h1 else "Room in Shared House"
 
-        # 2. Extract Outcode (UK Outcode format: e.g. EX4, BS8, M14, LS6, B15, SW19)
+        # 2. Extract Outcode & Location context (e.g. EX4, BS8, M14, LS6)
+        url_match = re.search(r"/flatshare/([^/]+)/([^/]+)/", url)
+        url_area = url_match.group(2).replace("_", " ").title() if url_match else ""
+
         page_text = soup.get_text(" ", strip=True)
-        # Search for valid UK outcodes in text
-        outcode_match = re.search(r"\b([A-Z]{1,2}\d[A-Z\d]?)\b", page_text)
+        outcode_match = re.search(r"\b(EX\d{1,2}|BS\d{1,2}|M\d{1,2}|B\d{1,2}|LS\d{1,2}|L\d{1,2}|S\d{1,2}|NG\d{1,2}|[A-Z]{1,2}\d[A-Z\d]?)\b", page_text)
         outcode = outcode_match.group(1).upper() if outcode_match else "HMO"
 
         # Extract HMO street hint if present in description/key-features
@@ -653,7 +655,12 @@ class RoomRadarScraper:
             r"\b([A-Z][a-z]+\s(?:Road|Street|Avenue|Crescent|Lane|Hill|Terrace|Way|Gardens|Grove|Drive))\b",
             page_text,
         )
-        street_hint = street_match.group(1) if street_match else "Unknown Street"
+        if street_match:
+            street_hint = street_match.group(1)
+        elif url_area and url_area.lower() not in ("flatshare", "properties", "rooms"):
+            street_hint = url_area
+        else:
+            street_hint = f"{outcode} Area"
 
         # 3. Extract Monthly Rent (converts Studentpad/UniHomes pppw or pw to pcm if listed weekly)
         rent_pcm = 0

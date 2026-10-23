@@ -415,7 +415,7 @@ async def get_dashboard_summary():
             }
             overall_score = round(sum(avg_scores.values()) / 5.0, 1)
 
-        street = rm["street_hint"] or "Monks Road"
+        street = rm["street_hint"] or ""
         postcode = rm.get("postcode") or rm["outcode"]
         full_address = rm.get("full_address") or (f"{street}, {postcode}" if street else postcode)
         lat = rm.get("latitude")
@@ -426,8 +426,8 @@ async def get_dashboard_summary():
             lng = geo["longitude"]
             zone = geo["zone"]
         else:
-            _, _, default_zone = STREET_COORDINATES.get(street, (lat, lng, f"{rm['outcode']} HMO Corridor"))
-            zone = default_zone
+            city_guess = geocoder.guess_city_from_outcode(rm["outcode"])
+            zone = f"{city_guess} — {street or rm['outcode']}"
 
         rooms_payload.append(
             {
