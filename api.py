@@ -152,6 +152,9 @@ def get_db_connection():
 def init_and_seed_reviews():
     """Ensures all base tables + room_reviews exist and seeds realistic Exeter HMO rooms."""
     fingerprint_db = RoomFingerprintDB(DB_PATH)
+    if fingerprint_db.is_pg:
+        # PostgreSQL schema is already created and maintained via db_adapter
+        return
     conn = fingerprint_db.conn
     with conn:
         conn.executescript(
