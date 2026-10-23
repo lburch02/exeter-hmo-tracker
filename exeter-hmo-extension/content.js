@@ -545,7 +545,7 @@
               • Advert <code>#${escapeHtml(adId)}</code>
             </div>
             <div style="display: flex; gap: 8px; align-items: center;">
-              <a class="btn-outline" href="https://roomradar.onrender.com/" target="_blank" rel="noopener">RoomRadar Dashboard ↗</a>
+              <a class="btn-outline" href="https://roomradar-7o6x.onrender.com/" target="_blank" rel="noopener">RoomRadar Dashboard ↗</a>
               <button class="btn" id="submit-review-btn">Lived here? Add Room Review</button>
             </div>
           </div>
@@ -717,7 +717,7 @@
           <div class="pills">
             <span class="pill">Relisted ${escapeHtml(apiData.times_listed_18m)}x across portals</span>
             ${rentAlert}
-            <a class="btn-outline" href="https://roomradar.onrender.com/" target="_blank" rel="noopener">RoomRadar Dashboard ↗</a>
+            <a class="btn-outline" href="https://roomradar-7o6x.onrender.com/" target="_blank" rel="noopener">RoomRadar Dashboard ↗</a>
             <button class="btn" id="submit-review-btn">+ Add Review</button>
           </div>
         </div>

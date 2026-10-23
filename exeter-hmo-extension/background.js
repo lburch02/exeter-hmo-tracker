@@ -1,4 +1,4 @@
-const PRIMARY_API = "https://roomradar.onrender.com/api/v1";
+const PRIMARY_API = "https://roomradar-7o6x.onrender.com/api/v1";
 const FALLBACK_API = "https://exeter-hmo-tracker.onrender.com/api/v1";
 
 async function resilientFetch(path, options) {
