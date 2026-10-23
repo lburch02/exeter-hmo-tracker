@@ -458,14 +458,58 @@ async def get_dashboard_summary():
             }
         )
 
+    # Fetch real online reviews from allAgents & Trustpilot
+    try:
+        external_rows = conn.execute(
+            """
+            SELECT agency_name, city, source, reviewer_name, review_date, star_rating, recommend, rent_paid_pcm, postcode, comment, source_url
+            FROM agency_reviews
+            ORDER BY agency_review_id DESC
+            """
+        ).fetchall()
+    except Exception:
+        external_rows = []
+
     conn.close()
 
+    # Aggregate external online reviews by agency
+    external_stats: Dict[str, dict] = {}
+    for er in external_rows:
+        ag_name = er["agency_name"]
+        if ag_name not in external_stats:
+            external_stats[ag_name] = {
+                "name": ag_name,
+                "city": er["city"],
+                "source": er["source"],
+                "review_count": 0,
+                "star_sum": 0,
+                "recommend_yes": 0,
+                "recent_reviews": [],
+            }
+        external_stats[ag_name]["review_count"] += 1
+        external_stats[ag_name]["star_sum"] += er["star_rating"]
+        if er.get("recommend") == "Yes":
+            external_stats[ag_name]["recommend_yes"] += 1
+        if len(external_stats[ag_name]["recent_reviews"]) < 4:
+            external_stats[ag_name]["recent_reviews"].append({
+                "reviewer": er["reviewer_name"],
+                "date": er["review_date"],
+                "rating": er["star_rating"],
+                "recommend": er["recommend"],
+                "rent": er.get("rent_paid_pcm"),
+                "postcode": er.get("postcode"),
+                "comment": er["comment"][:220] + ("..." if len(er["comment"]) > 220 else ""),
+            })
+
     agency_leaderboard = []
+    # 1. Add agencies from internal room reviews
     for ag in agency_stats.values():
         cnt = ag["review_count"]
         comm_avg = round(ag["comm_sum"] / cnt, 1)
         dep_avg = round(ag["deposit_sum"] / cnt, 1)
         warm_avg = round(ag["warmth_sum"] / cnt, 1)
+        # Check if matching external stats exist
+        ext = external_stats.get(ag["name"])
         agency_leaderboard.append(
             {
                 "name": ag["name"],
@@ -474,16 +518,58 @@ async def get_dashboard_summary():
                 "deposit_fairness_avg": dep_avg,
                 "warmth_damp_avg": warm_avg,
                 "combined_score": round((comm_avg + dep_avg + warm_avg) / 3.0, 1),
+                "external_reviews": ext["recent_reviews"] if ext else [],
+                "external_count": ext["review_count"] if ext else 0,
+                "external_avg": round(ext["star_sum"] / ext["review_count"], 1) if ext else None,
+                "source": ext["source"] if ext else "RoomRadar",
             }
         )
+
+    # 2. Add national/regional agencies from allAgents not yet in local room reviews
+    for name, ext in external_stats.items():
+        if not any(a["name"].lower() == name.lower() for a in agency_leaderboard):
+            star_avg = round(ext["star_sum"] / ext["review_count"], 1)
+            agency_leaderboard.append(
+                {
+                    "name": name,
+                    "review_count": ext["review_count"],
+                    "agency_comm_avg": star_avg,
+                    "deposit_fairness_avg": star_avg,
+                    "warmth_damp_avg": star_avg,
+                    "combined_score": star_avg,
+                    "external_reviews": ext["recent_reviews"],
+                    "external_count": ext["review_count"],
+                    "external_avg": star_avg,
+                    "source": ext["source"],
+                    "city": ext["city"],
+                }
+            )
+
     agency_leaderboard.sort(key=lambda x: x["combined_score"], reverse=True)
 
     return {
         "total_rooms": len(rooms_payload),
-        "total_reviews": sum(len(r["reviews"]) for r in rooms_payload),
+        "total_reviews": sum(len(r["reviews"]) for r in rooms_payload) + len(external_rows),
         "rooms": rooms_payload,
         "agencies": agency_leaderboard,
+        "external_reviews_count": len(external_rows),
     }
+
+
+@app.get("/api/v1/agencies/reviews")
+async def get_agency_reviews(agency_name: Optional[str] = None):
+    conn = get_db_connection()
+    if agency_name:
+        rows = conn.execute(
+            "SELECT * FROM agency_reviews WHERE lower(agency_name) LIKE lower(?) ORDER BY agency_review_id DESC",
+            (f"%{agency_name.strip()}%",),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM agency_reviews ORDER BY agency_review_id DESC LIMIT 100"
+        ).fetchall()
+    conn.close()
+    return {"total": len(rows), "reviews": [dict(r) for r in rows]}
 
 
 # =====================================================================

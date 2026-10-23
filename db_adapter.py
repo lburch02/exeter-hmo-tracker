@@ -103,6 +103,23 @@ class DBConnection:
                         embargo_until DATE NOT NULL
                     );
 
+                    CREATE TABLE IF NOT EXISTS agency_reviews (
+                        agency_review_id SERIAL PRIMARY KEY,
+                        agency_name VARCHAR(255) NOT NULL,
+                        city VARCHAR(100) DEFAULT 'National',
+                        source VARCHAR(100) NOT NULL,
+                        reviewer_name VARCHAR(100),
+                        review_date VARCHAR(50),
+                        star_rating INTEGER NOT NULL,
+                        recommend VARCHAR(10),
+                        rent_paid_pcm INTEGER,
+                        postcode VARCHAR(12),
+                        comment TEXT NOT NULL,
+                        source_url TEXT,
+                        scraped_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_pg_agency_name ON agency_reviews(agency_name);
                     CREATE INDEX IF NOT EXISTS idx_pg_outcode ON physical_rooms(outcode);
                     CREATE INDEX IF NOT EXISTS idx_pg_ad_id ON listing_snapshots(portal, external_ad_id);
                     """
@@ -168,6 +185,23 @@ class DBConnection:
                         FOREIGN KEY (room_id) REFERENCES physical_rooms(room_id)
                     );
 
+                    CREATE TABLE IF NOT EXISTS agency_reviews (
+                        agency_review_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        agency_name TEXT NOT NULL,
+                        city TEXT DEFAULT 'National',
+                        source TEXT NOT NULL,
+                        reviewer_name TEXT,
+                        review_date TEXT,
+                        star_rating INTEGER NOT NULL,
+                        recommend TEXT,
+                        rent_paid_pcm INTEGER,
+                        postcode TEXT,
+                        comment TEXT NOT NULL,
+                        source_url TEXT,
+                        scraped_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_agency_name ON agency_reviews(agency_name);
                     CREATE INDEX IF NOT EXISTS idx_outcode ON physical_rooms(outcode);
                     CREATE INDEX IF NOT EXISTS idx_ad_id ON listing_snapshots(portal, external_ad_id);
                     """

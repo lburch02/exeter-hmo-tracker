@@ -574,8 +574,23 @@
     </div>
   </div>
 
+  <!-- Agency Online Reviews Modal -->
+  <div class="modal-backdrop" id="agency-modal" style="display: none; align-items: center; justify-content: center; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 10000; padding: 16px;">
+    <div class="modal" style="background: #fff; border-radius: 12px; width: 100%; max-width: 680px; max-height: 85vh; overflow-y: auto; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+        <div>
+          <h2 id="agency-modal-title" style="margin: 0; font-size: 18px; color: #0f172a;">🏢 Agency Reviews</h2>
+          <div id="agency-modal-sub" style="font-size: 12px; color: #64748b; margin-top: 3px;">Real tenant reviews scraped from allAgents.co.uk & national platforms</div>
+        </div>
+        <button id="close-agency-modal-btn" style="border: none; background: none; font-size: 22px; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+      <div id="agency-modal-body" style="display: flex; flex-direction: column; gap: 12px;"></div>
+    </div>
+  </div>
+
   <script>
     let allRooms = [];
+    let allAgencies = [];
     let mapInstance = null;
     let markerLayer = null;
 
@@ -635,23 +650,85 @@
     }
 
     function renderAgencyLeaderboard(agencies) {
+      allAgencies = agencies;
       const tbody = document.getElementById("agency-tbody");
       tbody.innerHTML = agencies
-        .map(
-          (ag) => `
-          <tr onclick="filterByAgency('${escapeHtml(ag.name)}')">
-            <td>
-              <strong>${escapeHtml(ag.name)}</strong>
-              <div style="font-size: 11px; color: #64748b;">${ag.review_count} verified review${ag.review_count === 1 ? "" : "s"}</div>
-            </td>
-            <td><span class="score-chip" style="background:${scoreColor(ag.agency_comm_avg)}">${ag.agency_comm_avg} / 5</span></td>
-            <td><span class="score-chip" style="background:${scoreColor(ag.deposit_fairness_avg)}">${ag.deposit_fairness_avg} / 5</span></td>
-            <td><span class="score-chip" style="background:${scoreColor(ag.warmth_damp_avg)}">${ag.warmth_damp_avg} / 5</span></td>
-          </tr>
-        `
-        )
+        .map((ag) => {
+          const sourceBadge = ag.source && ag.source !== "RoomRadar"
+            ? `<span style="display: inline-block; font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; margin-left: 4px; font-weight: 500;">🌐 ${escapeHtml(ag.source)}</span>`
+            : "";
+          const cityBadge = ag.city && ag.city !== "National"
+            ? `<span style="font-size: 10px; color: #64748b;"> • ${escapeHtml(ag.city)}</span>`
+            : (ag.city ? ` <span style="font-size: 10px; color: #64748b;"> • UK National</span>` : "");
+          const subText = ag.external_count
+            ? `${ag.review_count} reviews (${ag.source || 'allAgents'}) • Click to view real tenant feedback ↗`
+            : `${ag.review_count} verified tenant review${ag.review_count === 1 ? "" : "s"}`;
+
+          return `
+            <tr onclick="openAgencyModal('${escapeHtml(ag.name)}')">
+              <td>
+                <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+                  <strong style="color: #0f172a;">${escapeHtml(ag.name)}</strong>
+                  ${sourceBadge}
+                  ${cityBadge}
+                </div>
+                <div style="font-size: 11px; color: #2563eb; margin-top: 2px;">${subText}</div>
+              </td>
+              <td><span class="score-chip" style="background:${scoreColor(ag.agency_comm_avg)}">${ag.agency_comm_avg} / 5</span></td>
+              <td><span class="score-chip" style="background:${scoreColor(ag.deposit_fairness_avg)}">${ag.deposit_fairness_avg} / 5</span></td>
+              <td><span class="score-chip" style="background:${scoreColor(ag.warmth_damp_avg)}">${ag.warmth_damp_avg} / 5</span></td>
+            </tr>
+          `;
+        })
         .join("");
     }
+
+    window.openAgencyModal = function (agencyName) {
+      const ag = allAgencies.find((a) => a.name === agencyName);
+      if (!ag) return;
+      document.getElementById("agency-modal-title").innerText = `🏢 ${ag.name}`;
+      const extReviews = ag.external_reviews || [];
+      const body = document.getElementById("agency-modal-body");
+
+      if (!extReviews.length) {
+        body.innerHTML = `
+          <div style="padding: 24px; text-align: center; color: #64748b;">
+            <p>No external allAgents reviews synced yet for this agency.</p>
+            <button class="btn-primary" style="margin-top: 8px;" onclick="filterByAgency('${escapeHtml(ag.name)}'); document.getElementById('agency-modal').style.display='none';">View Room Reviews on Dashboard</button>
+          </div>
+        `;
+      } else {
+        body.innerHTML = `
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <div style="font-size: 16px; font-weight: 700; color: #0f172a;">Overall Rating: ⭐ ${ag.combined_score} / 5</div>
+              <div style="font-size: 12px; color: #64748b;">Based on ${ag.external_count} unedited tenant reviews from <b>${escapeHtml(ag.source || 'allAgents.co.uk')}</b></div>
+            </div>
+            <button class="btn-outline" style="font-size: 12px; padding: 6px 10px;" onclick="filterByAgency('${escapeHtml(ag.name)}'); document.getElementById('agency-modal').style.display='none';">Filter HMO Rooms by Agency</button>
+          </div>
+          <div style="font-size: 13px; font-weight: 600; color: #334155; margin-top: 4px;">Recent Tenant Reviews:</div>
+          ${extReviews.map(r => `
+            <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #fff;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 12px; flex-wrap: wrap; gap: 4px;">
+                <div>
+                  <strong style="color: #0f172a;">${escapeHtml(r.reviewer || 'Tenant')}</strong>
+                  <span style="color: #64748b; margin-left: 6px;">• ${escapeHtml(r.date || '')}</span>
+                  ${r.postcode ? `<span style="background: #f1f5f9; padding: 2px 5px; border-radius: 4px; margin-left: 6px; color: #475569;">📍 ${escapeHtml(r.postcode)}</span>` : ''}
+                  ${r.rent ? `<span style="color: #64748b; margin-left: 6px;">(Paid £${r.rent}/mo)</span>` : ''}
+                </div>
+                <div>
+                  <span class="score-chip" style="background: ${scoreColor(r.rating)}">${r.rating} / 5</span>
+                  ${r.recommend === 'Yes' ? '<span style="color: #16a34a; font-weight: 600; margin-left: 6px;">✓ Recommends</span>' : '<span style="color: #dc2626; font-weight: 600; margin-left: 6px;">✕ Does not recommend</span>'}
+                </div>
+              </div>
+              <div style="font-size: 13px; color: #334155; line-height: 1.5; font-style: italic;">"${escapeHtml(r.comment)}"</div>
+            </div>
+          `).join('')}
+        `;
+      }
+
+      document.getElementById("agency-modal").style.display = "flex";
+    };
 
     window.filterByAgency = function (agencyName) {
       document.getElementById("search-input").value = agencyName;
@@ -800,6 +877,15 @@
     });
     document.getElementById("close-modal-btn").addEventListener("click", () => {
       modal.style.display = "none";
+    });
+
+    const agencyModal = document.getElementById("agency-modal");
+    document.getElementById("close-agency-modal-btn").addEventListener("click", () => {
+      agencyModal.style.display = "none";
+    });
+    window.addEventListener("click", (e) => {
+      if (e.target === agencyModal) agencyModal.style.display = "none";
+      if (e.target === modal) modal.style.display = "none";
     });
 
     document.getElementById("dashboard-review-form").addEventListener("submit", async (e) => {

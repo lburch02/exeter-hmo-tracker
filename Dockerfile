@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install --with-deps chromium
 
 # Copy application files
-COPY api.py roomradar_matcher.py exeter_hmo_matcher.py db_adapter.py db_layer.py geocoder.py dashboard.html ./
+COPY api.py roomradar_matcher.py exeter_hmo_matcher.py db_adapter.py db_layer.py geocoder.py agency_review_scraper.py dashboard.html ./
 
 # Create data directory for persistent SQLite database
 RUN mkdir -p /app/data
