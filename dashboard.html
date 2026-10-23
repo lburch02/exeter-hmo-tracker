@@ -413,15 +413,10 @@
         <input
           type="text"
           id="search-input"
-          placeholder="Search street (Monks Rd, Pennsylvania Rd, Victoria St), agency, or room..."
+          placeholder="Search street, postcode (EX4, BS7, M14), agency, or room..."
         />
         <select id="outcode-filter">
           <option value="ALL">All UK Outcodes</option>
-          <option value="EX4">EX4 (St James / Pennsylvania / Mount Pleasant)</option>
-          <option value="EX2">EX2 (Heavitree / St Leonard's)</option>
-          <option value="EX1">EX1 (City Centre / Polsloe)</option>
-          <option value="BS8">BS8 (Bristol Clifton)</option>
-          <option value="M14">M14 (Manchester Fallowfield)</option>
         </select>
         <select id="sort-filter">
           <option value="rent_hike">Sort: Highest Rent Hike %</option>
@@ -431,6 +426,7 @@
         </select>
       </div>
 
+      <div id="filter-banner" style="display: none;"></div>
       <div id="rooms-container"></div>
     </div>
   </div>
@@ -620,7 +616,12 @@
 
     function renderMapMarkers(rooms) {
       markerLayer.clearLayers();
+      const validMarkers = [];
+
       rooms.forEach((rm) => {
+        if (!rm.lat || !rm.lng) return;
+        validMarkers.push([rm.lat, rm.lng]);
+
         const color = scoreColor(rm.overall_score);
         const marker = L.circleMarker([rm.lat, rm.lng], {
           radius: 9,
@@ -632,21 +633,26 @@
         });
         const addressLine = rm.full_address || `${rm.street_hint}, ${rm.postcode || rm.outcode}`;
         marker.bindPopup(`
-          <div style="font-size: 13px; min-width: 180px;">
+          <div style="font-size: 13px; min-width: 200px;">
             <strong style="color: #0f172a; font-size: 14px;">🏠 ${escapeHtml(rm.canonical_label)}</strong><br/>
             <div style="color: #2563eb; font-weight: 600; margin: 3px 0;">📍 ${escapeHtml(addressLine)}</div>
             <div style="color: #64748b; font-size: 11px;">Postcode: <b>${escapeHtml(rm.postcode || rm.outcode)}</b> • Room #${rm.room_id}</div>
-            <div style="margin-top: 6px; padding-top: 5px; border-top: 1px solid #e2e8f0; font-size: 12px;">
-              Score: <b>${rm.overall_score ?? "N/A"} / 5</b> • Rent: <b>£${rm.latest_rent_pcm ?? "?"} pcm</b>
+            <div style="margin-top: 6px; padding-top: 5px; border-top: 1px solid #e2e8f0; font-size: 12px; display: flex; justify-content: space-between;">
+              <span>Score: <b>${rm.overall_score ?? "N/A"}/5</b></span>
+              <span>Rent: <b>£${rm.latest_rent_pcm ?? "?"} pcm</b></span>
             </div>
+            <button onclick="selectRoom(${rm.room_id})" style="width: 100%; margin-top: 8px; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer;">View Room Details & Reviews →</button>
           </div>
         `);
         marker.on("click", () => {
-          document.getElementById("search-input").value = rm.full_address || rm.street_hint;
-          applyFiltersAndRender();
+          selectRoom(rm.room_id);
         });
         marker.addTo(markerLayer);
       });
+
+      if (validMarkers.length > 0) {
+        mapInstance.fitBounds(validMarkers, { padding: [30, 30], maxZoom: 15 });
+      }
     }
 
     function renderAgencyLeaderboard(agencies) {
@@ -730,8 +736,32 @@
       document.getElementById("agency-modal").style.display = "flex";
     };
 
+    let selectedRoomId = null;
+
+    window.selectRoom = function (roomId) {
+      selectedRoomId = roomId;
+      const room = allRooms.find((r) => r.room_id === roomId);
+      if (room && document.getElementById("outcode-filter").value !== "ALL" && document.getElementById("outcode-filter").value !== room.outcode) {
+        document.getElementById("outcode-filter").value = "ALL";
+      }
+      applyFiltersAndRender();
+      setTimeout(() => {
+        const el = document.getElementById(`room-card-${roomId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }, 60);
+    };
+
+    window.clearRoomSelection = function () {
+      selectedRoomId = null;
+      applyFiltersAndRender();
+    };
+
     window.filterByAgency = function (agencyName) {
+      selectedRoomId = null;
       document.getElementById("search-input").value = agencyName;
+      document.getElementById("outcode-filter").value = "ALL";
       applyFiltersAndRender();
     };
 
@@ -744,6 +774,7 @@
 
       container.innerHTML = rooms
         .map((rm) => {
+          const isSelected = selectedRoomId === rm.room_id;
           const s = rm.avg_scores || {
             noise: 0,
             warmth_damp: 0,
@@ -775,10 +806,13 @@
             .join("");
 
           return `
-            <div class="room-card" style="border-left-color: ${scoreColor(rm.overall_score)}">
+            <div id="room-card-${rm.room_id}" class="room-card" style="border-left-color: ${scoreColor(rm.overall_score)}; ${isSelected ? 'outline: 2px solid #2563eb; background: #f8faff; box-shadow: 0 4px 14px rgba(37,99,235,0.18);' : ''}">
               <div class="room-header">
                 <div>
-                  <div class="room-title">🏠 ${escapeHtml(rm.canonical_label)}</div>
+                  <div class="room-title">
+                    🏠 ${escapeHtml(rm.canonical_label)}
+                    ${isSelected ? '<span class="pill" style="background: #2563eb; color: #fff; margin-left: 8px;">📍 Map Selected</span>' : ''}
+                  </div>
                   <div class="room-sub">
                     📍 <b>${escapeHtml(rm.full_address || rm.street_hint)}</b> • Postcode: <code>${escapeHtml(rm.postcode || rm.outcode)}</code> • Room #${rm.room_id}
                   </div>
@@ -832,12 +866,37 @@
       const q = document.getElementById("search-input").value.trim().toLowerCase();
       const outcode = document.getElementById("outcode-filter").value;
       const sortBy = document.getElementById("sort-filter").value;
+      const banner = document.getElementById("filter-banner");
+
+      if (selectedRoomId) {
+        const selRoom = allRooms.find((r) => r.room_id === selectedRoomId);
+        if (selRoom) {
+          banner.style.display = "block";
+          banner.innerHTML = `
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #1e40af; margin-bottom: 12px;">
+              <div>
+                <span>📍 <b>Pinned Map Property:</b> Showing Room #${selRoom.room_id} (${escapeHtml(selRoom.full_address || selRoom.street_hint)})</span>
+                <span style="margin-left: 8px; color: #3b82f6;">• ${escapeHtml(selRoom.primary_agency || '')}</span>
+              </div>
+              <button onclick="clearRoomSelection()" style="background: #fff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: #1d4ed8; cursor: pointer;">Show All Properties (${allRooms.length})</button>
+            </div>
+          `;
+        } else {
+          banner.style.display = "none";
+        }
+      } else {
+        banner.style.display = "none";
+      }
 
       let filtered = allRooms.filter((r) => {
+        if (selectedRoomId) {
+          return r.room_id === selectedRoomId;
+        }
         if (outcode !== "ALL" && r.outcode !== outcode) return false;
         if (!q) return true;
-        const hay = `${r.street_hint} ${r.canonical_label} ${r.primary_agency} ${r.outcode} ${r.zone}`.toLowerCase();
-        return hay.includes(q);
+        const hay = `${r.room_id} ${r.street_hint || ''} ${r.full_address || ''} ${r.postcode || ''} ${r.canonical_label || ''} ${r.primary_agency || ''} ${r.outcode || ''} ${r.zone || ''}`.toLowerCase();
+        const terms = q.split(/\s+/).filter(Boolean);
+        return terms.every((t) => hay.includes(t));
       });
 
       filtered.sort((a, b) => {
@@ -857,15 +916,42 @@
       allRooms = data.rooms;
       document.getElementById("stat-rooms").textContent = `${data.total_rooms} Physical Rooms Tracked`;
       document.getElementById("stat-reviews").textContent = `${data.total_reviews} Verified Reviews`;
+
+      // Dynamically populate outcode filter with counts
+      const outcodeSelect = document.getElementById("outcode-filter");
+      const currentSelection = outcodeSelect.value;
+      const outcodeCounts = {};
+      allRooms.forEach((r) => {
+        if (r.outcode) {
+          outcodeCounts[r.outcode] = (outcodeCounts[r.outcode] || 0) + 1;
+        }
+      });
+      const sortedOutcodes = Object.keys(outcodeCounts).sort();
+      let optionsHtml = `<option value="ALL">All UK Outcodes (${allRooms.length} properties)</option>`;
+      sortedOutcodes.forEach((oc) => {
+        optionsHtml += `<option value="${oc}">${oc} (${outcodeCounts[oc]} rooms)</option>`;
+      });
+      outcodeSelect.innerHTML = optionsHtml;
+      if (sortedOutcodes.includes(currentSelection)) {
+        outcodeSelect.value = currentSelection;
+      }
+
       renderMapMarkers(allRooms);
       renderAgencyLeaderboard(data.agencies);
       applyFiltersAndRender();
     }
 
-    document.getElementById("search-input").addEventListener("input", applyFiltersAndRender);
-    document.getElementById("outcode-filter").addEventListener("change", applyFiltersAndRender);
+    document.getElementById("search-input").addEventListener("input", () => {
+      selectedRoomId = null;
+      applyFiltersAndRender();
+    });
+    document.getElementById("outcode-filter").addEventListener("change", () => {
+      selectedRoomId = null;
+      applyFiltersAndRender();
+    });
     document.getElementById("sort-filter").addEventListener("change", applyFiltersAndRender);
     document.getElementById("reset-map-filter").addEventListener("click", () => {
+      selectedRoomId = null;
       document.getElementById("search-input").value = "";
       document.getElementById("outcode-filter").value = "ALL";
       applyFiltersAndRender();
