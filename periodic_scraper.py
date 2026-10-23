@@ -37,9 +37,15 @@ HEADERS = {
 _default_sqlite = "roomradar.db" if os.path.exists("roomradar.db") else "exeter_hmo_tracker.db"
 DB_PATH = os.environ.get("DB_PATH", _default_sqlite)
 
-# Target cities for SpareRoom crawlers (defaults to exeter, easily scalable by setting TARGET_CITIES="exeter,bristol,manchester")
-TARGET_CITIES = [c.strip().lower() for c in os.environ.get("TARGET_CITIES", "exeter").split(",") if c.strip()]
-MAX_PAGES_PER_CITY = int(os.environ.get("MAX_PAGES_PER_CITY", "3"))
+# Target cities for SpareRoom crawlers (defaults to national student/rental hubs: Exeter, Bristol, Manchester, Birmingham, Leeds, etc.)
+TARGET_CITIES = [
+    c.strip().lower()
+    for c in os.environ.get(
+        "TARGET_CITIES", "exeter,bristol,manchester,birmingham,leeds,sheffield,liverpool,nottingham"
+    ).split(",")
+    if c.strip()
+]
+MAX_PAGES_PER_CITY = int(os.environ.get("MAX_PAGES_PER_CITY", "5"))
 
 
 async def discover_spareroom_listings(
@@ -144,14 +150,26 @@ async def run_periodic_scrape(db_path: str = DB_PATH) -> int:
         for ad_id, ad_url in all_listings:
             clean_id = normalize_ad_id(ad_id)
             # Skip if already scraped today
-            already = db.conn.execute(
-                """
-                SELECT 1 FROM listing_snapshots
-                WHERE external_ad_id = ? AND substr(scraped_at, 1, 10) = ?
-                LIMIT 1
-                """,
-                (clean_id, today_prefix),
-            ).fetchone()
+            if db.is_pg:
+                with db.conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT 1 FROM listing_snapshots
+                        WHERE external_ad_id = %s AND scraped_at::date = %s::date
+                        LIMIT 1
+                        """,
+                        (clean_id, today_prefix),
+                    )
+                    already = cur.fetchone()
+            else:
+                already = db.conn.execute(
+                    """
+                    SELECT 1 FROM listing_snapshots
+                    WHERE external_ad_id = ? AND substr(scraped_at, 1, 10) = ?
+                    LIMIT 1
+                    """,
+                    (clean_id, today_prefix),
+                ).fetchone()
 
             if already:
                 print(f"  [SKIP] Advert #{clean_id} already indexed today ({today_prefix}).")

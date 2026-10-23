@@ -5,7 +5,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 import imagehash
@@ -116,16 +116,23 @@ def compute_image_fingerprints(image_bytes: bytes) -> Tuple[str, int, str, int]:
 
 class RoomFingerprintDB:
     def __init__(self, db_path: str = "roomradar.db"):
-        # Auto-fallback to legacy SQLite name if it exists and default roomradar.db doesn't yet
         import os
-        if db_path == "roomradar.db" and not os.path.exists("roomradar.db") and os.path.exists("exeter_hmo_tracker.db"):
-            db_path = "exeter_hmo_tracker.db"
-        self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
-        self.conn.row_factory = sqlite3.Row
-        # Register Python's C-speed bit_count as a custom SQLite function for SQL queries
-        self.conn.create_function("HAMMING_DIST", 2, hamming_distance_int64)
-        self._init_schema()
+        import db_adapter
+        self.is_pg = db_adapter.is_postgres()
+        if self.is_pg:
+            self.adapter = db_adapter.DBConnection()
+            self.conn = self.adapter.conn
+            self.db_path = "Neon_PostgreSQL"
+        else:
+            self.adapter = None
+            if db_path == "roomradar.db" and not os.path.exists("roomradar.db") and os.path.exists("exeter_hmo_tracker.db"):
+                db_path = "exeter_hmo_tracker.db"
+            self.db_path = db_path
+            self.conn = sqlite3.connect(db_path)
+            self.conn.row_factory = sqlite3.Row
+            # Register Python's C-speed bit_count as a custom SQLite function for SQL queries
+            self.conn.create_function("HAMMING_DIST", 2, hamming_distance_int64)
+            self._init_schema()
 
     def _init_schema(self):
         with self.conn:
@@ -185,50 +192,91 @@ class RoomFingerprintDB:
 
     def find_matching_room_by_hash(
         self, phash_int64: int, dhash_int64: int, outcode: str
-    ) -> Optional[sqlite3.Row]:
+    ) -> Optional[Any]:
         """
         Matches a room in the same outcode if EITHER pHash OR dHash is within
         the Hamming threshold and the photo is not flagged as communal,
         ordering by the combined bit distance.
         """
-        query = """
-            SELECT
-                pr.room_id,
-                pr.canonical_label,
-                pr.street_hint,
-                ifp.phash_hex AS matched_phash_hex,
-                ls.external_ad_id AS historical_ad_id,
-                ls.rent_pcm AS historical_rent_pcm,
-                ls.scraped_at AS historical_date,
-                HAMMING_DIST(ifp.phash_int64, ?) AS p_dist,
-                HAMMING_DIST(ifp.dhash_int64, ?) AS d_dist
-            FROM image_fingerprints ifp
-            JOIN physical_rooms pr ON pr.room_id = ifp.room_id
-            JOIN listing_snapshots ls ON ls.snapshot_id = ifp.snapshot_id
-            WHERE pr.outcode = ?
-              AND ifp.is_communal = 0
-              AND (
-                  HAMMING_DIST(ifp.phash_int64, ?) <= ?
-                  OR HAMMING_DIST(ifp.dhash_int64, ?) <= ?
-              )
-            ORDER BY MIN(HAMMING_DIST(ifp.phash_int64, ?), HAMMING_DIST(ifp.dhash_int64, ?)) ASC
-            LIMIT 1;
-        """
-        cur = self.conn.execute(
-            query,
-            (
-                phash_int64,
-                dhash_int64,
-                outcode,
-                phash_int64,
-                HAMMING_DISTANCE_THRESHOLD,
-                dhash_int64,
-                HAMMING_DISTANCE_THRESHOLD,
-                phash_int64,
-                dhash_int64,
-            ),
-        )
-        return cur.fetchone()
+        if self.is_pg:
+            query = """
+                SELECT
+                    pr.room_id,
+                    pr.canonical_label,
+                    pr.street_hint,
+                    ifp.phash_hex AS matched_phash_hex,
+                    ls.external_ad_id AS historical_ad_id,
+                    ls.rent_pcm AS historical_rent_pcm,
+                    ls.scraped_at AS historical_date,
+                    bit_count((ifp.phash_int64 # %s)::bit(64)) AS p_dist,
+                    bit_count((ifp.dhash_int64 # %s)::bit(64)) AS d_dist
+                FROM image_fingerprints ifp
+                JOIN physical_rooms pr ON pr.room_id = ifp.room_id
+                JOIN listing_snapshots ls ON ls.snapshot_id = ifp.snapshot_id
+                WHERE pr.outcode = %s
+                  AND ifp.is_communal = 0
+                  AND (
+                      bit_count((ifp.phash_int64 # %s)::bit(64)) <= %s
+                      OR bit_count((ifp.dhash_int64 # %s)::bit(64)) <= %s
+                  )
+                ORDER BY LEAST(bit_count((ifp.phash_int64 # %s)::bit(64)), bit_count((ifp.dhash_int64 # %s)::bit(64))) ASC
+                LIMIT 1;
+            """
+            cur = self.conn.cursor()
+            cur.execute(
+                query,
+                (
+                    phash_int64,
+                    dhash_int64,
+                    outcode,
+                    phash_int64,
+                    HAMMING_DISTANCE_THRESHOLD,
+                    dhash_int64,
+                    HAMMING_DISTANCE_THRESHOLD,
+                    phash_int64,
+                    dhash_int64,
+                ),
+            )
+            return cur.fetchone()
+        else:
+            query = """
+                SELECT
+                    pr.room_id,
+                    pr.canonical_label,
+                    pr.street_hint,
+                    ifp.phash_hex AS matched_phash_hex,
+                    ls.external_ad_id AS historical_ad_id,
+                    ls.rent_pcm AS historical_rent_pcm,
+                    ls.scraped_at AS historical_date,
+                    HAMMING_DIST(ifp.phash_int64, ?) AS p_dist,
+                    HAMMING_DIST(ifp.dhash_int64, ?) AS d_dist
+                FROM image_fingerprints ifp
+                JOIN physical_rooms pr ON pr.room_id = ifp.room_id
+                JOIN listing_snapshots ls ON ls.snapshot_id = ifp.snapshot_id
+                WHERE pr.outcode = ?
+                  AND ifp.is_communal = 0
+                  AND (
+                      HAMMING_DIST(ifp.phash_int64, ?) <= ?
+                      OR HAMMING_DIST(ifp.dhash_int64, ?) <= ?
+                  )
+                ORDER BY MIN(HAMMING_DIST(ifp.phash_int64, ?), HAMMING_DIST(ifp.dhash_int64, ?)) ASC
+                LIMIT 1;
+            """
+            cur = self.conn.execute(
+                query,
+                (
+                    phash_int64,
+                    dhash_int64,
+                    outcode,
+                    phash_int64,
+                    HAMMING_DISTANCE_THRESHOLD,
+                    dhash_int64,
+                    HAMMING_DISTANCE_THRESHOLD,
+                    phash_int64,
+                    dhash_int64,
+                ),
+            )
+            return cur.fetchone()
 
     def check_same_day_communal_collision(
         self,
@@ -246,33 +294,64 @@ class RoomFingerprintDB:
         """
         if not advertiser_uid:
             return []
-        rows = self.conn.execute(
+        if self.is_pg:
+            query = """
+                SELECT ifp.fingerprint_id
+                FROM image_fingerprints ifp
+                JOIN listing_snapshots ls ON ls.snapshot_id = ifp.snapshot_id
+                JOIN physical_rooms pr ON pr.room_id = ifp.room_id
+                WHERE pr.outcode = %s
+                  AND ls.advertiser_uid = %s
+                  AND ls.external_ad_id != %s
+                  AND substr(ls.scraped_at::text, 1, 10) = %s
+                  AND (
+                      bit_count((ifp.phash_int64 # %s)::bit(64)) <= %s
+                      OR bit_count((ifp.dhash_int64 # %s)::bit(64)) <= %s
+                  )
             """
-            SELECT ifp.fingerprint_id
-            FROM image_fingerprints ifp
-            JOIN listing_snapshots ls ON ls.snapshot_id = ifp.snapshot_id
-            JOIN physical_rooms pr ON pr.room_id = ifp.room_id
-            WHERE pr.outcode = ?
-              AND ls.advertiser_uid = ?
-              AND ls.external_ad_id != ?
-              AND substr(ls.scraped_at, 1, 10) = ?
-              AND (
-                  HAMMING_DIST(ifp.phash_int64, ?) <= ?
-                  OR HAMMING_DIST(ifp.dhash_int64, ?) <= ?
-              )
-            """,
-            (
-                outcode,
-                advertiser_uid,
-                clean_ad_id,
-                scraped_date_prefix,
-                phash_int64,
-                COMMUNAL_COLLISION_THRESHOLD,
-                dhash_int64,
-                COMMUNAL_COLLISION_THRESHOLD,
-            ),
-        ).fetchall()
-        return [r["fingerprint_id"] for r in rows]
+            cur = self.conn.cursor()
+            cur.execute(
+                query,
+                (
+                    outcode,
+                    advertiser_uid,
+                    clean_ad_id,
+                    scraped_date_prefix,
+                    phash_int64,
+                    COMMUNAL_COLLISION_THRESHOLD,
+                    dhash_int64,
+                    COMMUNAL_COLLISION_THRESHOLD,
+                ),
+            )
+            return [r["fingerprint_id"] for r in cur.fetchall()]
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT ifp.fingerprint_id
+                FROM image_fingerprints ifp
+                JOIN listing_snapshots ls ON ls.snapshot_id = ifp.snapshot_id
+                JOIN physical_rooms pr ON pr.room_id = ifp.room_id
+                WHERE pr.outcode = ?
+                  AND ls.advertiser_uid = ?
+                  AND ls.external_ad_id != ?
+                  AND substr(ls.scraped_at, 1, 10) = ?
+                  AND (
+                      HAMMING_DIST(ifp.phash_int64, ?) <= ?
+                      OR HAMMING_DIST(ifp.dhash_int64, ?) <= ?
+                  )
+                """,
+                (
+                    outcode,
+                    advertiser_uid,
+                    clean_ad_id,
+                    scraped_date_prefix,
+                    phash_int64,
+                    COMMUNAL_COLLISION_THRESHOLD,
+                    dhash_int64,
+                    COMMUNAL_COLLISION_THRESHOLD,
+                ),
+            ).fetchall()
+            return [r["fingerprint_id"] for r in rows]
 
     def ingest_listing(
         self,
@@ -328,109 +407,211 @@ class RoomFingerprintDB:
                 if hit:
                     matched_room = hit
 
-        with self.conn:
-            # Quarantine any previously ingested fingerprints that collided with this same-day ad
-            if colliding_fp_ids_to_quarantine:
-                placeholders = ",".join("?" for _ in colliding_fp_ids_to_quarantine)
-                self.conn.execute(
-                    f"UPDATE image_fingerprints SET is_communal = 1 WHERE fingerprint_id IN ({placeholders})",
-                    colliding_fp_ids_to_quarantine,
-                )
+        if self.is_pg:
+            # PostgreSQL (Neon) implementation
+            with self.conn.cursor() as cur:
+                if colliding_fp_ids_to_quarantine:
+                    cur.execute(
+                        "UPDATE image_fingerprints SET is_communal = 1 WHERE fingerprint_id = ANY(%s)",
+                        (colliding_fp_ids_to_quarantine,),
+                    )
 
-            if matched_room:
-                room_id = matched_room["room_id"]
-                rent_diff = listing.rent_pcm - matched_room["historical_rent_pcm"]
-                print(
-                    f"[MATCH FOUND] Ad #{clean_ad_id} matched to Physical Room #{room_id} "
-                    f"('{matched_room['canonical_label']}')!\n"
-                    f"  -> Matched via Photo Hamming Distance: pHash={matched_room['p_dist']}/64 bits, "
-                    f"dHash={matched_room['d_dist']}/64 bits\n"
-                    f"  -> Previous Ad ID: #{matched_room['historical_ad_id']} "
-                    f"(£{matched_room['historical_rent_pcm']} pcm) | "
-                    f"New Rent: £{listing.rent_pcm} pcm ({rent_diff:+d}/mo)"
-                )
-            else:
-                try:
-                    import geocoder
-                    geo = geocoder.geocode_location(postcode=listing.outcode, street_hint=listing.street_hint)
-                    lat, lng = geo["latitude"], geo["longitude"]
-                    full_addr, pc = geo["full_address"], geo["postcode"]
-                except Exception:
-                    lat, lng, full_addr, pc = None, None, f"{listing.street_hint}, {listing.outcode}", listing.outcode
+                if matched_room:
+                    room_id = matched_room["room_id"]
+                    rent_diff = listing.rent_pcm - matched_room["historical_rent_pcm"]
+                    print(
+                        f"[MATCH FOUND] Ad #{clean_ad_id} matched to Physical Room #{room_id} "
+                        f"('{matched_room['canonical_label']}')!\n"
+                        f"  -> Matched via Photo Hamming Distance: pHash={matched_room['p_dist']}/64 bits, "
+                        f"dHash={matched_room['d_dist']}/64 bits\n"
+                        f"  -> Previous Ad ID: #{matched_room['historical_ad_id']} "
+                        f"(£{matched_room['historical_rent_pcm']} pcm) | "
+                        f"New Rent: £{listing.rent_pcm} pcm ({rent_diff:+d}/mo)"
+                    )
+                else:
+                    try:
+                        import geocoder
+                        geo = geocoder.geocode_location(postcode=listing.outcode, street_hint=listing.street_hint)
+                        lat, lng = geo["latitude"], geo["longitude"]
+                        full_addr, pc = geo["full_address"], geo["postcode"]
+                    except Exception:
+                        lat, lng, full_addr, pc = None, None, f"{listing.street_hint}, {listing.outcode}", listing.outcode
 
-                cur = self.conn.execute(
+                    cur.execute(
+                        """
+                        INSERT INTO physical_rooms (outcode, street_hint, full_address, postcode, latitude, longitude, canonical_label, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING room_id
+                        """,
+                        (
+                            listing.outcode,
+                            listing.street_hint,
+                            full_addr,
+                            pc,
+                            lat,
+                            lng,
+                            f"{listing.outcode} - {listing.street_hint} ({listing.title[:35]})",
+                            now_iso,
+                        ),
+                    )
+                    room_id = cur.fetchone()["room_id"]
+                    print(
+                        f"[NEW ROOM] Created Physical Room #{room_id} for Ad #{clean_ad_id} "
+                        f"({listing.street_hint}, {listing.outcode} @ £{listing.rent_pcm} pcm)"
+                    )
+
+                # Avoid duplicate snapshot rows if re-running on the same persistent DB
+                cur.execute(
                     """
-                    INSERT INTO physical_rooms (outcode, street_hint, full_address, postcode, latitude, longitude, canonical_label, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    SELECT snapshot_id FROM listing_snapshots
+                    WHERE portal = %s AND external_ad_id IN (%s, %s)
+                    LIMIT 1
                     """,
-                    (
-                        listing.outcode,
-                        listing.street_hint,
-                        full_addr,
-                        pc,
-                        lat,
-                        lng,
-                        f"{listing.outcode} - {listing.street_hint} ({listing.title[:35]})",
-                        now_iso,
-                    ),
+                    (listing.portal, clean_ad_id, listing.external_ad_id),
                 )
-                room_id = cur.lastrowid
-                print(
-                    f"[NEW ROOM] Created Physical Room #{room_id} for Ad #{clean_ad_id} "
-                    f"({listing.street_hint}, {listing.outcode} @ £{listing.rent_pcm} pcm)"
-                )
+                existing_snap = cur.fetchone()
 
-            # Avoid duplicate snapshot rows if re-running demo on the same persistent DB
-            existing_snap = self.conn.execute(
-                """
-                SELECT snapshot_id FROM listing_snapshots
-                WHERE portal = ? AND external_ad_id IN (?, ?)
-                LIMIT 1
-                """,
-                (listing.portal, clean_ad_id, listing.external_ad_id),
-            ).fetchone()
+                if existing_snap:
+                    snapshot_id = existing_snap["snapshot_id"]
+                    cur.execute(
+                        """
+                        UPDATE listing_snapshots
+                        SET room_id = %s, external_ad_id = %s, rent_pcm = %s
+                        WHERE snapshot_id = %s
+                        """,
+                        (room_id, clean_ad_id, listing.rent_pcm, snapshot_id),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO listing_snapshots
+                        (room_id, portal, external_ad_id, url, rent_pcm, bills_included, advertiser_uid, scraped_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING snapshot_id
+                        """,
+                        (
+                            room_id,
+                            listing.portal,
+                            clean_ad_id,
+                            listing.url,
+                            listing.rent_pcm,
+                            int(listing.bills_included),
+                            listing.advertiser_uid,
+                            now_iso,
+                        ),
+                    )
+                    snapshot_id = cur.fetchone()["snapshot_id"]
 
-            if existing_snap:
-                snapshot_id = existing_snap["snapshot_id"]
-                self.conn.execute(
+                    for img_url, caption, is_comm, p_hex, p_int, d_hex, d_int in computed_hashes:
+                        cur.execute(
+                            """
+                            INSERT INTO image_fingerprints
+                            (room_id, snapshot_id, image_url, caption, is_communal, phash_hex, phash_int64, dhash_hex, dhash_int64)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (room_id, snapshot_id, img_url, caption, is_comm, p_hex, p_int, d_hex, d_int),
+                        )
+        else:
+            # SQLite fallback
+            with self.conn:
+                if colliding_fp_ids_to_quarantine:
+                    placeholders = ",".join("?" for _ in colliding_fp_ids_to_quarantine)
+                    self.conn.execute(
+                        f"UPDATE image_fingerprints SET is_communal = 1 WHERE fingerprint_id IN ({placeholders})",
+                        colliding_fp_ids_to_quarantine,
+                    )
+
+                if matched_room:
+                    room_id = matched_room["room_id"]
+                    rent_diff = listing.rent_pcm - matched_room["historical_rent_pcm"]
+                    print(
+                        f"[MATCH FOUND] Ad #{clean_ad_id} matched to Physical Room #{room_id} "
+                        f"('{matched_room['canonical_label']}')!\n"
+                        f"  -> Matched via Photo Hamming Distance: pHash={matched_room['p_dist']}/64 bits, "
+                        f"dHash={matched_room['d_dist']}/64 bits\n"
+                        f"  -> Previous Ad ID: #{matched_room['historical_ad_id']} "
+                        f"(£{matched_room['historical_rent_pcm']} pcm) | "
+                        f"New Rent: £{listing.rent_pcm} pcm ({rent_diff:+d}/mo)"
+                    )
+                else:
+                    try:
+                        import geocoder
+                        geo = geocoder.geocode_location(postcode=listing.outcode, street_hint=listing.street_hint)
+                        lat, lng = geo["latitude"], geo["longitude"]
+                        full_addr, pc = geo["full_address"], geo["postcode"]
+                    except Exception:
+                        lat, lng, full_addr, pc = None, None, f"{listing.street_hint}, {listing.outcode}", listing.outcode
+
+                    cur = self.conn.execute(
+                        """
+                        INSERT INTO physical_rooms (outcode, street_hint, full_address, postcode, latitude, longitude, canonical_label, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            listing.outcode,
+                            listing.street_hint,
+                            full_addr,
+                            pc,
+                            lat,
+                            lng,
+                            f"{listing.outcode} - {listing.street_hint} ({listing.title[:35]})",
+                            now_iso,
+                        ),
+                    )
+                    room_id = cur.lastrowid
+                    print(
+                        f"[NEW ROOM] Created Physical Room #{room_id} for Ad #{clean_ad_id} "
+                        f"({listing.street_hint}, {listing.outcode} @ £{listing.rent_pcm} pcm)"
+                    )
+
+                existing_snap = self.conn.execute(
                     """
-                    UPDATE listing_snapshots
-                    SET room_id = ?, external_ad_id = ?, rent_pcm = ?
-                    WHERE snapshot_id = ?
+                    SELECT snapshot_id FROM listing_snapshots
+                    WHERE portal = ? AND external_ad_id IN (?, ?)
+                    LIMIT 1
                     """,
-                    (room_id, clean_ad_id, listing.rent_pcm, snapshot_id),
-                )
-            else:
-                # Record the Listing Snapshot
-                snap_cur = self.conn.execute(
-                    """
-                    INSERT INTO listing_snapshots
-                    (room_id, portal, external_ad_id, url, rent_pcm, bills_included, advertiser_uid, scraped_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        room_id,
-                        listing.portal,
-                        clean_ad_id,
-                        listing.url,
-                        listing.rent_pcm,
-                        int(listing.bills_included),
-                        listing.advertiser_uid,
-                        now_iso,
-                    ),
-                )
-                snapshot_id = snap_cur.lastrowid
+                    (listing.portal, clean_ad_id, listing.external_ad_id),
+                ).fetchone()
 
-                # Store all Image Fingerprints
-                for img_url, caption, is_comm, p_hex, p_int, d_hex, d_int in computed_hashes:
+                if existing_snap:
+                    snapshot_id = existing_snap["snapshot_id"]
                     self.conn.execute(
                         """
-                        INSERT INTO image_fingerprints
-                        (room_id, snapshot_id, image_url, caption, is_communal, phash_hex, phash_int64, dhash_hex, dhash_int64)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        UPDATE listing_snapshots
+                        SET room_id = ?, external_ad_id = ?, rent_pcm = ?
+                        WHERE snapshot_id = ?
                         """,
-                        (room_id, snapshot_id, img_url, caption, is_comm, p_hex, p_int, d_hex, d_int),
+                        (room_id, clean_ad_id, listing.rent_pcm, snapshot_id),
                     )
+                else:
+                    snap_cur = self.conn.execute(
+                        """
+                        INSERT INTO listing_snapshots
+                        (room_id, portal, external_ad_id, url, rent_pcm, bills_included, advertiser_uid, scraped_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            room_id,
+                            listing.portal,
+                            clean_ad_id,
+                            listing.url,
+                            listing.rent_pcm,
+                            int(listing.bills_included),
+                            listing.advertiser_uid,
+                            now_iso,
+                        ),
+                    )
+                    snapshot_id = snap_cur.lastrowid
+
+                    for img_url, caption, is_comm, p_hex, p_int, d_hex, d_int in computed_hashes:
+                        self.conn.execute(
+                            """
+                            INSERT INTO image_fingerprints
+                            (room_id, snapshot_id, image_url, caption, is_communal, phash_hex, phash_int64, dhash_hex, dhash_int64)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (room_id, snapshot_id, img_url, caption, is_comm, p_hex, p_int, d_hex, d_int),
+                        )
 
         return room_id
 
